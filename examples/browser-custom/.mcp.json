@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sidecar": {
+      "command": "node",
+      "args": ["/Users/burakemre/Code/ai-experiments/mcp-sidecar/dist/index.js"],
+      "cwd": "/Users/burakemre/Code/ai-experiments/mcp-sidecar/examples/browser-custom"
+    }
+  }
+}

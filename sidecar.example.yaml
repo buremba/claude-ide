@@ -1,0 +1,62 @@
+# Example sidecar.yaml configuration
+# Copy this to your project root as sidecar.yaml
+# To install: claude plugin install /Users/burakemre/Code/ai-experiments/mcp-sidecar
+
+reuse: true
+
+# Optional browser automation (requires reuse: true)
+# browser:
+#   enabled: true
+#   headless: false
+#   userDataDir: ./.mcp-sidecar-browser
+#   copyProfileFrom: auto  # auto, null (fresh), or a custom profile path
+
+processes:
+  # Frontend dev server - port auto-detected from output
+  frontend:
+    command: npm run dev
+    cwd: ./frontend
+    restartPolicy: onFailure  # Restart only on crashes
+
+  # Backend with fixed port and envFile support
+  backend:
+    command: npm run server
+    cwd: ./backend
+    port: 8080
+    envFile: .env  # Load environment variables from file
+    restartPolicy: always  # Always restart (like a daemon)
+    env:
+      NODE_ENV: development  # Explicit env vars override envFile
+
+  # Process that depends on backend being ready
+  worker:
+    command: npm run worker
+    cwd: ./worker
+    envFile: .env  # Relative to config dir (not cwd)
+    dependsOn: backend
+    autoStart: false  # Start manually with start_process
+    restartPolicy: always
+
+  # Build step that runs once before dependent processes
+  build:
+    command: npm run build
+    cwd: ./packages/api
+    restartPolicy: never  # One-shot: runs once, then done
+
+  # API that depends on build completing
+  api:
+    command: python -m uvicorn main:app --host 0.0.0.0 --port $PORT
+    cwd: ./api
+    port: 8000
+    healthCheck: /health
+    dependsOn: build
+    restartPolicy: onFailure
+
+  # VS Code in Browser (using code-server)
+  # Install: brew install code-server OR npm install -g code-server
+  # Access: Browser will auto-open when process is ready
+  vscode:
+    command: code-server --bind-addr localhost:$PORT --auth none .
+    port: 8443
+    restartPolicy: onFailure
+    autoStart: false  # Start manually with start_process

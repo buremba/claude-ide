@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.idea/
+*.swp
+*.swo
+*~
+
+# MCP sidecar runtime data
+.mcp-sidecar-browser/
+
+# VS Code server data (runtime)
+.vscode-server/data/logs/
+.vscode-server/data/CachedProfilesData/
+.vscode-server/data/extensions/
+.vscode-server/data/*.json
+.vscode-server/data/*.soc
+
+# Claude local settings
+.claude/settings.local.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

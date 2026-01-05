@@ -1,0 +1,17 @@
+# VS Code in Browser example
+# Run Claude Code in this directory to test
+
+reuse: true
+
+browser:
+  enabled: true
+  headless: false
+  autoOpen: true
+  userDataDir: ./.mcp-sidecar-browser
+
+processes:
+  vscode:
+    command: code-server --bind-addr localhost:$PORT --auth none --user-data-dir ./.vscode-server/data .
+    port: 8443
+    restartPolicy: onFailure
+    autoStart: false  # Start manually with: start_process vscode

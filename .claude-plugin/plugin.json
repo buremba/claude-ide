@@ -1,0 +1,15 @@
+{
+  "name": "sidecar",
+  "version": "0.1.0",
+  "description": "Background process management with live statusline",
+  "author": {
+    "name": "buremba"
+  },
+  "repository": "https://github.com/buremba/mcp-sidecar",
+  "license": "MIT",
+  "keywords": ["process", "sidecar", "dev-server", "statusline"],
+  "mcpServers": "./.claude-plugin/mcp.json",
+  "commands": "./.claude-plugin/commands/",
+  "skills": "./.claude-plugin/skills/",
+  "hooks": "./.claude-plugin/hooks/hooks.json"
+}

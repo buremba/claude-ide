@@ -1,0 +1,58 @@
+{
+  "name": "mcp-sidecar",
+  "version": "0.1.0",
+  "description": "MCP server that runs your dev servers and provides preview URLs",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "mcp-sidecar": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "assets",
+    ".claude-plugin"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build",
+    "inspector": "npx @anthropic-ai/mcp-inspector node dist/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/buremba/mcp-sidecar.git"
+  },
+  "author": "buremba",
+  "homepage": "https://github.com/buremba/mcp-sidecar#readme",
+  "bugs": {
+    "url": "https://github.com/buremba/mcp-sidecar/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "sidecar",
+    "dev-server",
+    "preview-url",
+    "process-manager",
+    "claude-code",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "chokidar": "^5.0.0",
+    "playwright": "^1.57.0",
+    "unzipper": "^0.12.3",
+    "yaml": "^2.3.4",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/unzipper": "^0.10.11",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

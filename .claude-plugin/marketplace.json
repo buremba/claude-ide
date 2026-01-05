@@ -1,0 +1,21 @@
+{
+  "name": "mcp-sidecar",
+  "owner": {
+    "name": "buremba"
+  },
+  "metadata": {
+    "description": "Background process management for Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "sidecar",
+      "source": "./",
+      "description": "Background process management with live statusline. Auto-starts dev servers from sidecar.yaml and shows status in Claude Code's statusline.",
+      "version": "0.1.0",
+      "author": {
+        "name": "buremba"
+      }
+    }
+  ]
+}
