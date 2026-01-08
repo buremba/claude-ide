@@ -4,10 +4,20 @@ import * as path from "path";
 import * as os from "os";
 import { spawn } from "child_process";
 import { createRequire } from "module";
+import { fileURLToPath } from "url";
 import { emitResult } from "./types.js";
 
-// Create require function for resolving module paths
+// ESM compatibility for __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Create require function for resolving module paths from ink-runner's location
 const require = createRequire(import.meta.url);
+
+// Get ink-runner's node_modules path for explicit resolution
+// When running from plugin: dist/ink-runner/dist/file-runner.js -> dist/ink-runner/node_modules
+// When running from dev: packages/ink-runner/dist/file-runner.js -> packages/ink-runner/node_modules
+const inkRunnerNodeModules = path.resolve(__dirname, "..", "node_modules");
 
 /**
  * Sandbox configuration for running custom Ink components
@@ -158,7 +168,31 @@ const __dirname = __dirname_fn(__filename);
             // Resolve bare specifiers for ink and react
             build.onResolve({ filter: /^(ink|react|react\/jsx-runtime)$/ }, (args) => {
               try {
-                // Use require.resolve to find the actual path in ink-runner's node_modules
+                // Explicitly resolve from ink-runner's node_modules, not from CWD
+                // This is critical when running as a Claude Code plugin
+                const modulePath = path.join(inkRunnerNodeModules, args.path);
+
+                // For react/jsx-runtime, we need to resolve the actual file
+                if (args.path === "react/jsx-runtime") {
+                  const jsxRuntimePath = path.join(inkRunnerNodeModules, "react", "jsx-runtime.js");
+                  if (fs.existsSync(jsxRuntimePath)) {
+                    return { path: jsxRuntimePath };
+                  }
+                }
+
+                // For ink and react, resolve using require.resolve with explicit paths
+                const pkgJsonPath = path.join(modulePath, "package.json");
+                if (fs.existsSync(pkgJsonPath)) {
+                  const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+                  // Use the main/module/exports field to find the entry point
+                  const entryPoint = pkgJson.module || pkgJson.main || "index.js";
+                  const resolvedPath = path.join(modulePath, entryPoint);
+                  if (fs.existsSync(resolvedPath)) {
+                    return { path: resolvedPath };
+                  }
+                }
+
+                // Fallback to require.resolve
                 const resolved = require.resolve(args.path);
                 return { path: resolved };
               } catch {
