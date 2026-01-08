@@ -986,6 +986,12 @@ async function main() {
     console.error("[sidecar] Shutting down...");
 
     try {
+      // Stop all pending interactions first
+      if (interactionManager) {
+        await interactionManager.stopAll();
+      }
+
+      // Then stop all processes and destroy tmux session
       if (processManager) {
         await processManager.stopAll();
       }

@@ -333,10 +333,11 @@ export class InteractionManager extends EventEmitter {
       // Check if pane still exists (use interaction id as the "process name")
       const paneExists = await this.tmuxManager.paneExists(id);
       if (!paneExists) {
-        // Pane was closed - treat as cancel
+        // Pane was closed/died - treat as cancel and cleanup
         state.status = "cancelled";
         state.result = { action: "cancel" };
         this.stopPolling(id);
+        this.interactions.delete(id);  // Remove from memory
         this.emit("interactionComplete", id, state.result);
         return;
       }
