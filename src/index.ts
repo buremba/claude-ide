@@ -682,7 +682,7 @@ async function main() {
       }
 
       case "create_terminal": {
-        if (!processManager) {
+        if (!processManager || !tmuxManager) {
           return formatToolError("No sidecar.yaml found - process management not available");
         }
         const parsed = CreateTerminalSchema.parse(args);
@@ -691,6 +691,12 @@ async function main() {
           parsed.command,
           parsed.group
         );
+
+        // Auto-open terminal if not already attached
+        if (config?.settings?.autoAttachTerminal !== false) {
+          await tmuxManager.openTerminal(config?.settings?.terminalApp, configDir);
+        }
+
         const groups = processManager.getAvailableGroups();
         return {
           content: [{
@@ -838,6 +844,11 @@ async function main() {
           group: parsed.group,
           timeoutMs: parsed.timeout_ms,
         });
+
+        // Auto-open terminal if not already attached
+        if (config?.settings?.autoAttachTerminal !== false) {
+          await tmuxManager.openTerminal(config?.settings?.terminalApp, configDir);
+        }
 
         // Non-blocking mode
         if (parsed.block === false) {
