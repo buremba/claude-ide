@@ -3,7 +3,7 @@
 import React from "react";
 import { render } from "ink";
 import { SchemaForm } from "./components/SchemaForm.js";
-import { emitResult } from "./types.js";
+import { emitResult, emitResultWithFile, setInteractionId } from "./types.js";
 import { runFromFile } from "./file-runner.js";
 import type { FormSchema } from "./types.js";
 
@@ -13,6 +13,7 @@ interface CliArgs {
   title?: string;
   help?: boolean;
   noSandbox?: boolean;
+  interactionId?: string;
 }
 
 function parseArgs(): CliArgs {
@@ -32,6 +33,8 @@ function parseArgs(): CliArgs {
       result.title = args[++i];
     } else if (arg === "--no-sandbox") {
       result.noSandbox = true;
+    } else if (arg === "--interaction-id" || arg === "-i") {
+      result.interactionId = args[++i];
     }
   }
 
@@ -109,6 +112,11 @@ Controls:
 async function main(): Promise<void> {
   const args = parseArgs();
 
+  // Set interaction ID for file-based result communication
+  if (args.interactionId) {
+    setInteractionId(args.interactionId);
+  }
+
   if (args.help) {
     showHelp();
     process.exit(0);
@@ -116,12 +124,12 @@ async function main(): Promise<void> {
 
   // Handle SIGINT/SIGTERM
   process.on("SIGINT", () => {
-    emitResult({ action: "cancel" });
+    emitResultWithFile({ action: "cancel" });
     process.exit(0);
   });
 
   process.on("SIGTERM", () => {
-    emitResult({ action: "cancel" });
+    emitResultWithFile({ action: "cancel" });
     process.exit(0);
   });
 

@@ -12,6 +12,15 @@ export interface GroupPosition {
 
 export type TerminalApp = "auto" | "tmux" | "ghostty" | "iterm" | "kitty" | "terminal";
 
+export type SidecarStatus = "pending" | "running" | "completed" | "failed";
+
+const STATUS_ICONS: Record<SidecarStatus, string> = {
+  pending: "⏳",
+  running: "🔄",
+  completed: "✅",
+  failed: "❌",
+};
+
 /**
  * Check if we're running inside a tmux session
  */
@@ -82,6 +91,215 @@ export async function listSidecarSessions(prefix = "sidecar"): Promise<Array<{ n
   } catch {
     // No sessions or tmux not running
     return [];
+  }
+}
+
+/**
+ * Get the current tmux session name from tmux
+ * Returns null if not inside tmux
+ */
+export async function getCurrentTmuxSession(): Promise<string | null> {
+  if (!process.env.TMUX) return null;
+
+  try {
+    const { stdout } = await execFileAsync("tmux", ["display-message", "-p", "#{session_name}"]);
+    return stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Manages panes in the user's current tmux session (embedded mode)
+ * Used when mcp-sidecar is running inside an existing tmux session
+ */
+export class EmbeddedTmuxManager {
+  private paneMap = new Map<string, string>(); // name -> paneId
+  private sessionName: string;
+  private sourcePaneId: string; // The pane where Claude is running
+
+  private constructor(sessionName: string, sourcePaneId: string) {
+    this.sessionName = sessionName;
+    this.sourcePaneId = sourcePaneId;
+  }
+
+  /**
+   * Create an EmbeddedTmuxManager (async factory)
+   */
+  static async create(): Promise<EmbeddedTmuxManager> {
+    const session = await getCurrentTmuxSession();
+    if (!session) {
+      throw new Error("EmbeddedTmuxManager requires running inside tmux");
+    }
+
+    // Use $TMUX_PANE - this is the pane ID where Claude is running
+    let sourcePaneId = process.env.TMUX_PANE || "";
+
+    // Fallback: if TMUX_PANE not set, get the active pane of the current window
+    if (!sourcePaneId) {
+      try {
+        // Get the active pane ID from the session's current window
+        const { stdout } = await execFileAsync("tmux", [
+          "display-message", "-t", session, "-p", "#{pane_id}"
+        ]);
+        sourcePaneId = stdout.trim();
+        if (sourcePaneId) {
+          console.error(`[sidecar] Embedded mode: session=${session}, sourcePaneId=${sourcePaneId} (fallback via display-message)`);
+        }
+      } catch {
+        console.error(`[sidecar] Warning: Could not get active pane for session ${session}`);
+      }
+    } else {
+      console.error(`[sidecar] Embedded mode: session=${session}, sourcePaneId=${sourcePaneId}`);
+    }
+
+    return new EmbeddedTmuxManager(session, sourcePaneId);
+  }
+
+  /**
+   * Get the session name
+   */
+  getSessionName(): string {
+    return this.sessionName;
+  }
+
+  /**
+   * Create a new pane with split in the current window
+   * Uses tiled layout to distribute panes evenly
+   */
+  async createPane(name: string, command: string, cwd: string, _env?: Record<string, string>): Promise<string> {
+    if (this.paneMap.has(name)) {
+      throw new Error(`Pane "${name}" already exists`);
+    }
+
+    const shellCommand = `cd ${this.shellEscape(cwd)} && ${command}`;
+
+    // Build split-window args
+    const args = ["split-window"];
+
+    // Target Claude's pane directly if we have it
+    if (this.sourcePaneId) {
+      args.push("-t", this.sourcePaneId);
+    }
+
+    args.push(
+      "-h",           // Horizontal split (side by side)
+      "-P",           // Print pane info
+      "-F", "#{pane_id}",
+      "-c", cwd,
+      "sh", "-c", shellCommand
+    );
+
+    const { stdout } = await execFileAsync("tmux", args);
+    const paneId = stdout.trim();
+    this.paneMap.set(name, paneId);
+
+    // Re-balance layout so all panes are evenly distributed
+    // Target by pane ID to ensure we get the right window
+    try {
+      if (this.sourcePaneId) {
+        await execFileAsync("tmux", ["select-layout", "-t", this.sourcePaneId, "tiled"]);
+      } else {
+        await execFileAsync("tmux", ["select-layout", "tiled"]);
+      }
+    } catch {
+      // Layout change might fail, that's ok
+    }
+
+    console.error(`[sidecar] Created embedded pane: ${name} (${paneId})`);
+    return paneId;
+  }
+
+  /**
+   * Kill a pane by name
+   */
+  async killPane(name: string): Promise<void> {
+    const paneId = this.paneMap.get(name);
+    if (!paneId) return;
+
+    try {
+      await execFileAsync("tmux", ["kill-pane", "-t", paneId]);
+    } catch {
+      // Pane might already be gone
+    }
+    this.paneMap.delete(name);
+  }
+
+  /**
+   * Get pane ID by name
+   */
+  getPaneId(name: string): string | undefined {
+    return this.paneMap.get(name);
+  }
+
+  /**
+   * Check if a pane exists
+   */
+  hasPane(name: string): boolean {
+    return this.paneMap.has(name);
+  }
+
+  /**
+   * Check if a pane exists (async version for TmuxManager compatibility)
+   */
+  async paneExists(name: string): Promise<boolean> {
+    return this.paneMap.has(name);
+  }
+
+  /**
+   * Capture pane output (alias for getPaneLogs for TmuxManager compatibility)
+   */
+  async capturePane(name: string, lines = 100): Promise<string> {
+    return this.getPaneLogs(name, lines);
+  }
+
+  /**
+   * Set the status (updates current window title)
+   */
+  async setStatus(status: SidecarStatus, message?: string): Promise<void> {
+    const icon = STATUS_ICONS[status];
+    const title = message
+      ? `${icon} Sidecar: ${message}`
+      : `${icon} Sidecar`;
+
+    try {
+      await execFileAsync("tmux", ["rename-window", title]);
+    } catch (err) {
+      console.error(`[sidecar] Failed to set status: ${err}`);
+    }
+  }
+
+  /**
+   * Get logs from a pane
+   */
+  async getPaneLogs(name: string, lines = 100): Promise<string> {
+    const paneId = this.paneMap.get(name);
+    if (!paneId) return "";
+
+    try {
+      const { stdout } = await execFileAsync("tmux", [
+        "capture-pane",
+        "-t", paneId,
+        "-p",           // Print to stdout
+        "-S", `-${lines}`,  // Start from N lines back
+      ]);
+      return stdout;
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * Stop all panes
+   */
+  async stopAll(): Promise<void> {
+    for (const [name] of this.paneMap) {
+      await this.killPane(name);
+    }
+  }
+
+  private shellEscape(str: string): string {
+    return `'${str.replace(/'/g, "'\\''")}'`;
   }
 }
 
@@ -223,6 +441,17 @@ export class TmuxManager {
     // Configure session options
     await this.runTmux(["set-option", "-t", finalName, "remain-on-exit", "on"]);
     await this.runTmux(["set-option", "-t", finalName, "history-limit", "50000"]);
+    // Enable set-titles globally so terminal window title syncs with tmux window name
+    // This is a global option but is generally benign - it just makes terminal titles more useful
+    try {
+      const { stdout } = await execFileAsync("tmux", ["show-options", "-gv", "set-titles"]);
+      if (stdout.trim() !== "on") {
+        await this.runTmux(["set-option", "-g", "set-titles", "on"]);
+        await this.runTmux(["set-option", "-g", "set-titles-string", "#{window_name}"]);
+      }
+    } catch {
+      // Ignore - set-titles might not be available or already configured
+    }
 
     // Update session name if we had to use suffix
     if (finalName !== this.sessionName) {
@@ -705,6 +934,26 @@ export class TmuxManager {
   private async runTmux(args: string[]): Promise<string> {
     const { stdout } = await execFileAsync("tmux", args);
     return stdout;
+  }
+
+  /**
+   * Set the sidecar status displayed in the terminal window title
+   */
+  async setStatus(status: SidecarStatus, message?: string): Promise<void> {
+    const icon = STATUS_ICONS[status];
+    const title = message
+      ? `${icon} Sidecar: ${message}`
+      : `${icon} Sidecar`;
+
+    try {
+      // Set tmux window name (visible in tmux status bar and terminal title if set-titles is on)
+      await execFileAsync("tmux", [
+        "rename-window", "-t", this.sessionName,
+        title
+      ]);
+    } catch (err) {
+      console.error(`[sidecar] Failed to set status: ${err}`);
+    }
   }
 
   /**

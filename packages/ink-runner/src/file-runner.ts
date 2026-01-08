@@ -5,7 +5,7 @@ import * as os from "os";
 import { spawn } from "child_process";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
-import { emitResult } from "./types.js";
+import { emitResult, getInteractionId, RESULT_FILE_DIR } from "./types.js";
 
 // ESM compatibility for __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -41,6 +41,8 @@ export interface RunFromFileOptions {
   title?: string;
   /** Sandbox configuration */
   sandbox?: SandboxOptions;
+  /** Interaction ID for file-based result communication */
+  interactionId?: string;
 }
 
 /**
@@ -69,6 +71,7 @@ export async function runFromFile(
   const filePath = options.filePath;
   const displayTitle = options.title;
   const sandbox: SandboxOptions = options.sandbox ?? { enabled: true };
+  const interactionId = options.interactionId ?? getInteractionId();
 
   // Validate file exists
   const absFilePath = path.resolve(filePath);
@@ -94,17 +97,29 @@ export async function runFromFile(
 
   try {
     // Create entry file that wraps the user's component
+    const interactionIdJson = interactionId ? JSON.stringify(interactionId) : "null";
     const entryScript = `
 import { render } from 'ink';
 import React from 'react';
+import { writeFileSync } from 'fs';
 import Component from ${JSON.stringify(absFilePath)};
+
+// Interaction ID for file-based result communication
+const __interactionId = ${interactionIdJson};
+const __resultFilePath = __interactionId ? '${RESULT_FILE_DIR}/mcp-interaction-' + __interactionId + '.result' : null;
 
 // Set up the onComplete callback
 let __resultEmitted = false;
 globalThis.onComplete = function(result) {
   if (__resultEmitted) return;
   __resultEmitted = true;
-  console.log('__MCP_RESULT__:' + JSON.stringify({ action: 'accept', result }));
+  const fullResult = { action: 'accept', result };
+  // Write to file first (synchronous, reliable)
+  if (__resultFilePath) {
+    writeFileSync(__resultFilePath, JSON.stringify(fullResult), 'utf-8');
+  }
+  // Also emit to stdout for backward compatibility
+  console.log('__MCP_RESULT__:' + JSON.stringify(fullResult));
   setTimeout(() => process.exit(0), 100);
 };
 

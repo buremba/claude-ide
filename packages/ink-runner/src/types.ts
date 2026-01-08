@@ -1,3 +1,5 @@
+import { writeFileSync } from "fs";
+
 /**
  * Schema types matching Claude Code's AskUserQuestion format
  */
@@ -37,4 +39,47 @@ export const RESULT_PREFIX = "__MCP_RESULT__:";
 
 export function emitResult(result: FormResult): void {
   console.log(`${RESULT_PREFIX}${JSON.stringify(result)}`);
+}
+
+/**
+ * File-based result communication (more reliable than stdout)
+ * Result files are stored in /tmp with pattern: mcp-interaction-{id}.result
+ */
+export const RESULT_FILE_DIR = "/tmp";
+
+export function getResultFilePath(interactionId: string): string {
+  return `${RESULT_FILE_DIR}/mcp-interaction-${interactionId}.result`;
+}
+
+/**
+ * Write result to file synchronously - guarantees write completes before process exit
+ */
+export function writeResultFile(interactionId: string, result: FormResult): void {
+  const filePath = getResultFilePath(interactionId);
+  writeFileSync(filePath, JSON.stringify(result), "utf-8");
+}
+
+/**
+ * Global interaction ID - set from command line args
+ */
+let _interactionId: string | undefined;
+
+export function setInteractionId(id: string): void {
+  _interactionId = id;
+}
+
+export function getInteractionId(): string | undefined {
+  return _interactionId;
+}
+
+/**
+ * Emit result via both file (reliable) and stdout (fallback/debugging)
+ */
+export function emitResultWithFile(result: FormResult): void {
+  // Write to file first (synchronous, guaranteed)
+  if (_interactionId) {
+    writeResultFile(_interactionId, result);
+  }
+  // Also emit to stdout for backward compatibility and debugging
+  emitResult(result);
 }

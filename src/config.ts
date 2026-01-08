@@ -31,6 +31,7 @@ export const ProcessConfigSchema = z.object({
     .union([z.string(), z.array(z.string())])
     .optional()
     .describe("Wait for one or more processes to be ready before starting"),
+  description: z.string().optional().describe("Description shown in session context to help LLM understand the service"),
 });
 
 export type ProcessConfig = z.infer<typeof ProcessConfigSchema>;
@@ -143,6 +144,11 @@ export const SettingsSchema = z.object({
   // Terminal app preference
   terminalApp: TerminalAppSchema
     .describe("Terminal app to use: auto (detect), ghostty, iterm, kitty, warp, terminal"),
+  // Tmux mode for when running inside tmux
+  tmuxMode: z
+    .enum(["embedded", "standalone"])
+    .optional()
+    .describe("Tmux mode: embedded (panes in current session) or standalone (separate sidecar session)"),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;

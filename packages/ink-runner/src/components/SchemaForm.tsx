@@ -3,7 +3,7 @@ import { Box, Text, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
 import SelectInput from "ink-select-input";
 import type { FormSchema, FormResult, FormOption } from "../types.js";
-import { emitResult } from "../types.js";
+import { emitResultWithFile } from "../types.js";
 
 interface Props {
   schema: FormSchema;
@@ -31,7 +31,7 @@ export function SchemaForm({ schema, title }: Props) {
   const isMultiSelect = currentQuestion?.multiSelect;
 
   const handleComplete = useCallback((result: FormResult) => {
-    emitResult(result);
+    emitResultWithFile(result);  // Writes to file (sync) + stdout
     exit();
   }, [exit]);
 

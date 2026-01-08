@@ -2,16 +2,28 @@ import { EventEmitter } from "events";
 import { TmuxManager } from "./tmux-manager.js";
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
 import { fileURLToPath } from "url";
+import { existsSync, readFileSync, unlinkSync } from "fs";
 
 // ESM compatibility for __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Result prefix used by ink-runner to signal completion
+ * Result prefix used by ink-runner to signal completion (stdout fallback)
  */
 const RESULT_PREFIX = "__MCP_RESULT__:";
+
+/**
+ * File-based result communication (primary method)
+ * More reliable than stdout since it's synchronous
+ */
+const RESULT_FILE_DIR = "/tmp";
+
+function getResultFilePath(interactionId: string): string {
+  return `${RESULT_FILE_DIR}/mcp-interaction-${interactionId}.result`;
+}
 
 /**
  * Directory name for interactive component files (relative to project root)
@@ -100,13 +112,32 @@ export class InteractionManager extends EventEmitter {
   }
 
   /**
-   * Resolve an ink_file path - relative paths are resolved from .sidecar/interactive
+   * Resolve an ink_file path
+   * Resolution order:
+   * 1. Absolute paths used as-is
+   * 2. Project .sidecar/interactive/ (takes precedence)
+   * 3. Global ~/.sidecar/interactive/
    */
   resolveInkFile(filePath: string): string {
+    // Absolute paths used as-is
     if (path.isAbsolute(filePath)) {
       return filePath;
     }
-    return path.join(this.getInteractiveDir(), filePath);
+
+    // Try project-local .sidecar/interactive/ first
+    const projectPath = path.join(this.getInteractiveDir(), filePath);
+    if (fs.existsSync(projectPath)) {
+      return projectPath;
+    }
+
+    // Try global ~/.sidecar/interactive/
+    const globalPath = path.join(os.homedir(), ".sidecar", "interactive", filePath);
+    if (fs.existsSync(globalPath)) {
+      return globalPath;
+    }
+
+    // Fallback to project path (will error if not found)
+    return projectPath;
   }
 
   private findInkRunnerPath(): string {
@@ -148,10 +179,11 @@ export class InteractionManager extends EventEmitter {
 
     // Build the command to run ink-runner
     let command: string;
+    const interactionIdArg = ` --interaction-id '${id}'`;  // For file-based result communication
     if (options.schema) {
       const schemaJson = JSON.stringify(options.schema);
       const escapedSchema = schemaJson.replace(/'/g, "'\\''"); // Escape single quotes for shell
-      command = `node "${this.inkRunnerPath}" --schema '${escapedSchema}'`;
+      command = `node "${this.inkRunnerPath}" --schema '${escapedSchema}'${interactionIdArg}`;
       if (options.title) {
         const escapedTitle = options.title.replace(/'/g, "'\\''");
         command += ` --title '${escapedTitle}'`;
@@ -161,7 +193,7 @@ export class InteractionManager extends EventEmitter {
       // Resolve relative paths from .sidecar/interactive directory
       const resolvedPath = this.resolveInkFile(options.inkFile);
       const escapedPath = resolvedPath.replace(/'/g, "'\\''");
-      command = `node "${this.inkRunnerPath}" --file '${escapedPath}'`;
+      command = `node "${this.inkRunnerPath}" --file '${escapedPath}'${interactionIdArg}`;
       if (options.title) {
         const escapedTitle = options.title.replace(/'/g, "'\\''");
         command += ` --title '${escapedTitle}'`;
@@ -270,6 +302,16 @@ export class InteractionManager extends EventEmitter {
     // Stop polling
     this.stopPolling(id);
 
+    // Clean up result file if exists
+    try {
+      const resultFilePath = getResultFilePath(id);
+      if (existsSync(resultFilePath)) {
+        unlinkSync(resultFilePath);
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
+
     // Kill the tmux pane (use interaction id as the "process name" since that's what we registered with)
     try {
       await this.tmuxManager.killPane(id);
@@ -295,6 +337,16 @@ export class InteractionManager extends EventEmitter {
     }
 
     this.stopPolling(id);
+
+    // Clean up result file if exists
+    try {
+      const resultFilePath = getResultFilePath(id);
+      if (existsSync(resultFilePath)) {
+        unlinkSync(resultFilePath);
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
 
     // Try to kill pane if it still exists (use interaction id as the "process name")
     try {
@@ -330,10 +382,32 @@ export class InteractionManager extends EventEmitter {
         }
       }
 
+      // Check for result file FIRST (primary, more reliable method)
+      // This must happen before pane check to handle edge case where pane is
+      // forcibly removed but result file was already written
+      const resultFilePath = getResultFilePath(id);
+      try {
+        if (existsSync(resultFilePath)) {
+          const fileContent = readFileSync(resultFilePath, "utf-8");
+          const result = JSON.parse(fileContent) as InteractionResult;
+          state.status = "completed";
+          state.result = result;
+          this.stopPolling(id);
+          // Clean up file immediately
+          try { unlinkSync(resultFilePath); } catch { /* ignore */ }
+          // Clean up pane after small delay to allow output to be seen
+          setTimeout(() => this.cleanup(id), 1000);
+          this.emit("interactionComplete", id, result);
+          return;
+        }
+      } catch {
+        // File read failed, continue with fallback
+      }
+
       // Check if pane still exists (use interaction id as the "process name")
       const paneExists = await this.tmuxManager.paneExists(id);
       if (!paneExists) {
-        // Pane was closed/died - treat as cancel and cleanup
+        // Pane was closed/died AND no result file = treat as cancel
         state.status = "cancelled";
         state.result = { action: "cancel" };
         this.stopPolling(id);
@@ -342,7 +416,7 @@ export class InteractionManager extends EventEmitter {
         return;
       }
 
-      // Capture pane output and look for result (use interaction id as "process name")
+      // Fallback: Capture pane output and look for result (use interaction id as "process name")
       try {
         const output = await this.tmuxManager.capturePane(id, 50);
         const result = this.parseResult(output);

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/scripts/setup-statusline.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/scripts/session-context.sh"
           }
         ]
       }

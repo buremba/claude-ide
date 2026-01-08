@@ -11,7 +11,7 @@ import { z } from "zod";
 import * as path from "path";
 import { loadConfig, configExists } from "./config.js";
 import { ProcessManager } from "./process-manager.js";
-import { TmuxManager, isTmuxAvailable, listSidecarSessions, isInsideTmux } from "./tmux-manager.js";
+import { TmuxManager, EmbeddedTmuxManager, isTmuxAvailable, listSidecarSessions, isInsideTmux } from "./tmux-manager.js";
 import { InteractionManager } from "./interaction-manager.js";
 
 type Command = "server" | "sessions" | "attach" | "help";
@@ -237,6 +237,7 @@ const CreateTerminalSchema = z.object({
   name: z.string().describe("Unique name for the terminal"),
   command: z.string().describe("Command to run in the terminal"),
   group: z.string().optional().describe("Group to place the terminal in (default: 'dynamic')"),
+  mode: z.enum(["embedded", "standalone"]).optional().describe("Tmux mode: embedded (current session) or standalone (separate sidecar session)"),
 });
 
 const RemoveTerminalSchema = z.object({
@@ -283,6 +284,11 @@ const GetInteractionResultSchema = z.object({
 
 const CancelInteractionSchema = z.object({
   interaction_id: z.string().describe("Interaction ID to cancel"),
+});
+
+const SetSidecarStatusSchema = z.object({
+  status: z.enum(["pending", "running", "completed", "failed"]),
+  message: z.string().optional(),
 });
 
 // Process tools
@@ -368,13 +374,14 @@ const PROCESS_TOOLS: Tool[] = [
   },
   {
     name: "create_terminal",
-    description: "Create a dynamic terminal pane running a command. The terminal is placed in the specified layout group.",
+    description: "Create a dynamic terminal pane running a command. In embedded mode (default when inside tmux), creates pane in current session. In standalone mode, creates in separate sidecar session.",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Unique name for the terminal" },
         command: { type: "string", description: "Command to run in the terminal" },
-        group: { type: "string", description: "Group to place the terminal in (default: 'dynamic')" },
+        group: { type: "string", description: "Group to place the terminal in (default: 'dynamic', standalone mode only)" },
+        mode: { type: "string", enum: ["embedded", "standalone"], description: "Tmux mode: embedded (current session) or standalone (separate sidecar session)" },
       },
       required: ["name", "command"],
     },
@@ -388,6 +395,25 @@ const PROCESS_TOOLS: Tool[] = [
         name: { type: "string", description: "Name of the terminal to remove" },
       },
       required: ["name"],
+    },
+  },
+  {
+    name: "set_sidecar_status",
+    description: "Update the sidecar terminal window title to show current status",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["pending", "running", "completed", "failed"],
+          description: "Current status indicator (⏳ pending, 🔄 running, ✅ completed, ❌ failed)",
+        },
+        message: {
+          type: "string",
+          description: "Custom message (e.g., 'Building project...', '3 tests failed')",
+        },
+      },
+      required: ["status"],
     },
   },
   {
@@ -518,7 +544,25 @@ async function main() {
   let configDir: string = workspaceDir;
   let processManager: ProcessManager | undefined;
   let tmuxManager: TmuxManager | undefined;
+  let embeddedTmuxManager: EmbeddedTmuxManager | undefined;
   let interactionManager: InteractionManager | undefined;
+
+  // Initialize embedded tmux manager if running inside tmux
+  if (isInsideTmux()) {
+    try {
+      embeddedTmuxManager = await EmbeddedTmuxManager.create();
+      console.error(`[sidecar] Running in embedded mode (session: ${embeddedTmuxManager.getSessionName()})`);
+
+      // Initialize interaction manager for embedded mode (works without sidecar.yaml)
+      // Uses ~/.sidecar/interactive/ for global components
+      interactionManager = new InteractionManager({
+        tmuxManager: embeddedTmuxManager as unknown as TmuxManager,
+        cwd: workspaceDir,
+      });
+    } catch (err) {
+      console.error(`[sidecar] Failed to create embedded tmux manager: ${err}`);
+    }
+  }
 
   if (hasConfig) {
     const loaded = await loadConfig(parsedArgs.config);
@@ -682,10 +726,39 @@ async function main() {
       }
 
       case "create_terminal": {
-        if (!processManager || !tmuxManager) {
-          return formatToolError("No sidecar.yaml found - process management not available");
-        }
         const parsed = CreateTerminalSchema.parse(args);
+
+        // Determine effective mode: tool param > config > auto-detect
+        const effectiveMode = parsed.mode
+          ?? config?.settings?.tmuxMode
+          ?? (isInsideTmux() ? "embedded" : "standalone");
+
+        // Embedded mode: create pane in user's current tmux session
+        if (effectiveMode === "embedded" && embeddedTmuxManager) {
+          const paneId = await embeddedTmuxManager.createPane(
+            parsed.name,
+            parsed.command,
+            configDir
+          );
+          return {
+            content: [{
+              type: "text",
+              text: `Created embedded terminal "${parsed.name}"\n` +
+                `Command: ${parsed.command}\n` +
+                `Pane ID: ${paneId}\n` +
+                `Session: ${embeddedTmuxManager.getSessionName()}`
+            }],
+          };
+        }
+
+        // Standalone mode: use separate sidecar session (requires config)
+        if (!processManager || !tmuxManager) {
+          if (effectiveMode === "embedded" && !embeddedTmuxManager) {
+            return formatToolError("Embedded mode requires running inside tmux");
+          }
+          return formatToolError("Standalone mode requires sidecar.yaml");
+        }
+
         const terminal = await processManager.createDynamicTerminal(
           parsed.name,
           parsed.command,
@@ -710,13 +783,40 @@ async function main() {
       }
 
       case "remove_terminal": {
-        if (!processManager) {
-          return formatToolError("No sidecar.yaml found - process management not available");
-        }
         const parsed = RemoveTerminalSchema.parse(args);
+
+        // Try embedded manager first
+        if (embeddedTmuxManager?.hasPane(parsed.name)) {
+          await embeddedTmuxManager.killPane(parsed.name);
+          return {
+            content: [{ type: "text", text: `Removed embedded terminal "${parsed.name}"` }],
+          };
+        }
+
+        // Fall back to standalone mode
+        if (!processManager) {
+          return formatToolError("Terminal not found");
+        }
         await processManager.removeDynamicTerminal(parsed.name);
         return {
           content: [{ type: "text", text: `Removed terminal "${parsed.name}"` }],
+        };
+      }
+
+      case "set_sidecar_status": {
+        const parsed = SetSidecarStatusSchema.parse(args);
+
+        // Use embedded manager if available, otherwise standalone
+        if (embeddedTmuxManager) {
+          await embeddedTmuxManager.setStatus(parsed.status, parsed.message);
+        } else if (tmuxManager) {
+          await tmuxManager.setStatus(parsed.status, parsed.message);
+        } else {
+          return formatToolError("No tmux session active");
+        }
+
+        return {
+          content: [{ type: "text", text: `Status: ${parsed.status}${parsed.message ? ` - ${parsed.message}` : ""}` }],
         };
       }
 
@@ -747,8 +847,123 @@ async function main() {
     // Process tools (always available if config exists)
     if (processManager) {
       tools = [...tools, ...PROCESS_TOOLS];
+    } else if (embeddedTmuxManager) {
+      // Embedded mode: offer terminal tools without full config
+      tools.push(
+        {
+          name: "create_terminal",
+          description: "Create a terminal pane in the current tmux session (embedded mode)",
+          inputSchema: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Unique name for the terminal" },
+              command: { type: "string", description: "Command to run in the terminal" },
+            },
+            required: ["name", "command"],
+          },
+        },
+        {
+          name: "remove_terminal",
+          description: "Remove a terminal pane by name",
+          inputSchema: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Name of the terminal to remove" },
+            },
+            required: ["name"],
+          },
+        },
+        {
+          name: "set_sidecar_status",
+          description: "Update the terminal window title to show current status",
+          inputSchema: {
+            type: "object",
+            properties: {
+              status: {
+                type: "string",
+                enum: ["pending", "running", "completed", "failed"],
+                description: "Current status indicator",
+              },
+              message: { type: "string", description: "Custom message" },
+            },
+            required: ["status"],
+          },
+        },
+        {
+          name: "test_blocking",
+          description: "Test tool that blocks for a specified duration while sending progress heartbeats.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              duration_seconds: { type: "number", description: "How long to block in seconds" },
+              heartbeat_interval_ms: { type: "number", description: "Progress heartbeat interval in ms (default: 25000)" },
+            },
+            required: ["duration_seconds"],
+          },
+        },
+        // Interaction tools (ink-runner based)
+        {
+          name: "show_interaction",
+          description: "Show an interactive form or custom Ink component in a tmux pane and collect user input. By default blocks until user completes the form.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              schema: {
+                type: "object",
+                description: "Form schema with questions (AskUserQuestion-compatible)",
+                properties: {
+                  questions: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        question: { type: "string", description: "The question to ask" },
+                        header: { type: "string", description: "Short label (max 12 chars)" },
+                        options: { type: "array", description: "Selection options (omit for text input)" },
+                        multiSelect: { type: "boolean", description: "Allow multiple selections" },
+                        inputType: { type: "string", enum: ["text", "textarea", "password"] },
+                        placeholder: { type: "string" },
+                        validation: { type: "string", description: "Regex pattern" },
+                      },
+                      required: ["question", "header"],
+                    },
+                  },
+                },
+                required: ["questions"],
+              },
+              ink_file: { type: "string", description: "Path to custom Ink component file (.tsx/.jsx) - resolves from ~/.sidecar/interactive/ or .sidecar/interactive/" },
+              title: { type: "string", description: "Form title" },
+              timeout_ms: { type: "number", description: "Auto-cancel timeout in ms" },
+              block: { type: "boolean", description: "Block until done (default: true)" },
+            },
+          },
+        },
+        {
+          name: "get_interaction_result",
+          description: "Get the result of a non-blocking interaction",
+          inputSchema: {
+            type: "object",
+            properties: {
+              interaction_id: { type: "string", description: "Interaction ID from show_interaction" },
+              block: { type: "boolean", description: "Wait for result (default: false)" },
+            },
+            required: ["interaction_id"],
+          },
+        },
+        {
+          name: "cancel_interaction",
+          description: "Cancel an active interaction",
+          inputSchema: {
+            type: "object",
+            properties: {
+              interaction_id: { type: "string", description: "Interaction ID to cancel" },
+            },
+            required: ["interaction_id"],
+          },
+        }
+      );
     } else {
-      // test_blocking is always available (for testing progress notifications)
+      // Minimal mode: just test_blocking
       tools.push({
         name: "test_blocking",
         description: "Test tool that blocks for a specified duration while sending progress heartbeats. Used to validate timeout handling.",
@@ -827,8 +1042,8 @@ async function main() {
 
       // Handle show_interaction (needs server access for progress notifications)
       if (name === "show_interaction") {
-        if (!interactionManager || !tmuxManager) {
-          return formatToolError("No sidecar.yaml found - interaction tools not available");
+        if (!interactionManager) {
+          return formatToolError("Interaction tools not available - tmux required");
         }
 
         const parsed = ShowInteractionSchema.parse(args);
@@ -846,7 +1061,7 @@ async function main() {
         });
 
         // Auto-open terminal if not already attached (skip if inside tmux - user can switch manually)
-        if (config?.settings?.autoAttachTerminal !== false && !isInsideTmux()) {
+        if (tmuxManager && config?.settings?.autoAttachTerminal !== false && !isInsideTmux()) {
           await tmuxManager.openTerminal(config?.settings?.terminalApp, configDir);
         }
 
@@ -930,7 +1145,7 @@ async function main() {
       // Handle get_interaction_result
       if (name === "get_interaction_result") {
         if (!interactionManager) {
-          return formatToolError("No sidecar.yaml found - interaction tools not available");
+          return formatToolError("Interaction tools not available - tmux required");
         }
 
         const parsed = GetInteractionResultSchema.parse(args);
@@ -967,7 +1182,7 @@ async function main() {
       // Handle cancel_interaction
       if (name === "cancel_interaction") {
         if (!interactionManager) {
-          return formatToolError("No sidecar.yaml found - interaction tools not available");
+          return formatToolError("Interaction tools not available - tmux required");
         }
 
         const parsed = CancelInteractionSchema.parse(args);
@@ -1001,6 +1216,11 @@ async function main() {
       // Stop all pending interactions first
       if (interactionManager) {
         await interactionManager.stopAll();
+      }
+
+      // Stop embedded panes
+      if (embeddedTmuxManager) {
+        await embeddedTmuxManager.stopAll();
       }
 
       // Then stop all processes and destroy tmux session
