@@ -9,136 +9,233 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import * as path from "path";
-import { loadConfig, configExists, BrowserConfig } from "./config.js";
+import { loadConfig, configExists } from "./config.js";
 import { ProcessManager } from "./process-manager.js";
-import { BrowserManager, TabInfo } from "./browser-manager.js";
-import { ConfigWatcher } from "./config-watcher.js";
-import { EnvFileWatcher } from "./env-file-watcher.js";
-import {
-  IpcEndpoint,
-  callIpc,
-  canConnect,
-  cleanupIpcEndpoint,
-  getIpcEndpoint,
-  isAddrInUse,
-  startIpcServer,
-} from "./ipc.js";
-import { logger } from "./logger.js";
+import { TmuxManager, isTmuxAvailable, listSidecarSessions } from "./tmux-manager.js";
+
+type Command = "server" | "sessions" | "attach" | "help";
+
+interface ParsedArgs {
+  command: Command;
+  config?: string;
+  sessionName?: string;
+}
 
 // Parse CLI arguments
-function parseArgs(): { configPath?: string } {
+function parseArgs(): ParsedArgs {
   const args = process.argv.slice(2);
-  let configPath: string | undefined;
+  let config: string | undefined;
+  let sessionName: string | undefined;
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "--config" || arg === "-c") {
-      configPath = args[++i];
-    } else if (arg.startsWith("--config=")) {
-      configPath = arg.split("=")[1];
-    } else if (arg === "--help" || arg === "-h") {
-      console.log(`
-mcp-sidecar - MCP server for managing background processes
+  // Check for subcommand
+  const firstArg = args[0];
+
+  if (!firstArg || firstArg.startsWith("-")) {
+    // No subcommand, default to server mode
+    // Parse remaining flags
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      if (arg === "--help" || arg === "-h") {
+        return { command: "help" };
+      } else if (arg === "--config" || arg === "-c") {
+        config = args[++i];
+        if (!config) {
+          console.error("Error: --config requires a path argument");
+          process.exit(1);
+        }
+      }
+    }
+    return { command: "server", config };
+  }
+
+  // Handle subcommands
+  switch (firstArg) {
+    case "sessions":
+      return { command: "sessions" };
+
+    case "attach":
+      sessionName = args[1];
+      return { command: "attach", sessionName };
+
+    case "help":
+    case "--help":
+    case "-h":
+      return { command: "help" };
+
+    default:
+      // Unknown arg, might be a flag for server mode
+      if (firstArg.startsWith("-")) {
+        for (let i = 0; i < args.length; i++) {
+          const arg = args[i];
+          if (arg === "--help" || arg === "-h") {
+            return { command: "help" };
+          } else if (arg === "--config" || arg === "-c") {
+            config = args[++i];
+          }
+        }
+        return { command: "server", config };
+      }
+      console.error(`Unknown command: ${firstArg}`);
+      console.error("Run 'mcp-sidecar help' for usage");
+      process.exit(1);
+  }
+}
+
+function showHelp(): void {
+  console.log(`
+mcp-sidecar - MCP server for managing development processes
 
 Usage:
-  mcp-sidecar [options]
+  mcp-sidecar [options]           Start MCP server (default)
+  mcp-sidecar sessions            List active sidecar tmux sessions
+  mcp-sidecar attach [name]       Attach to a tmux session
 
 Options:
-  -c, --config <path>  Path to sidecar.yaml config file
-  -h, --help           Show this help message
+  -h, --help              Show this help message
+  -c, --config <path>     Path to sidecar.yaml config file
 
-The server will auto-detect sidecar.yaml in the current directory.
-If no config is found, it starts with no processes (tools still available).
+Configuration:
+  Create a sidecar.yaml file in your project root to define processes.
+  Or specify a custom path with --config.
+
+tmux Integration:
+  Processes run in tmux panes for live output viewing.
+  Use 'mcp-sidecar attach' to see process output in your terminal.
+
+Example sidecar.yaml:
+  processes:
+    api:
+      command: npm run dev
+      port: 3000
+    frontend:
+      command: npm run dev
+      cwd: ./frontend
+      port: 5173
 `);
-      process.exit(0);
+}
+
+/**
+ * List all active sidecar sessions
+ */
+async function commandSessions(): Promise<void> {
+  const sessions = await listSidecarSessions();
+
+  if (sessions.length === 0) {
+    console.log("No active sidecar sessions found.");
+    console.log("\nStart a session by running 'mcp-sidecar' in a project directory with sidecar.yaml");
+    return;
+  }
+
+  console.log("SIDECAR SESSIONS");
+  console.log("================");
+  console.log("");
+
+  for (const session of sessions) {
+    const age = formatAge(session.created);
+    console.log(`  ${session.name.padEnd(30)} ${session.windows} window(s)   ${age}`);
+  }
+
+  console.log("");
+  console.log("Use: mcp-sidecar attach <name>");
+}
+
+/**
+ * Attach to a tmux session
+ */
+async function commandAttach(sessionName?: string): Promise<void> {
+  const sessions = await listSidecarSessions();
+
+  if (sessions.length === 0) {
+    console.error("No active sidecar sessions found.");
+    process.exit(1);
+  }
+
+  let targetSession: string;
+
+  if (sessionName) {
+    // Find exact or prefix match
+    const match = sessions.find(
+      (s) => s.name === sessionName || s.name.startsWith(sessionName)
+    );
+    if (!match) {
+      console.error(`Session "${sessionName}" not found.`);
+      console.error("\nAvailable sessions:");
+      sessions.forEach((s) => console.error(`  ${s.name}`));
+      process.exit(1);
+    }
+    targetSession = match.name;
+  } else {
+    // Auto-detect: try to find session for current directory
+    const projectName = path.basename(process.cwd());
+    const expectedName = `sidecar-${projectName.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}`;
+
+    const match = sessions.find((s) => s.name === expectedName || s.name.startsWith(expectedName));
+
+    if (match) {
+      targetSession = match.name;
+    } else if (sessions.length === 1) {
+      // Only one session, use it
+      targetSession = sessions[0].name;
+    } else {
+      console.error("Multiple sessions available. Please specify which one:");
+      sessions.forEach((s) => console.error(`  mcp-sidecar attach ${s.name}`));
+      process.exit(1);
     }
   }
 
-  return { configPath };
+  console.log(`Attaching to ${targetSession}...`);
+
+  // Create a temporary TmuxManager just to attach
+  const tmux = new TmuxManager(targetSession.replace(/^sidecar-/, ""));
+  (tmux as { sessionName: string }).sessionName = targetSession;
+  tmux.attach();
 }
 
-// Tool schemas
-const ListProcessesSchema = z.object({});
+function formatAge(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
 
-const GetLogsSchema = z.object({
-  name: z.string().describe("Process name"),
-  tail: z.number().optional().describe("Number of lines to return (default: 100)"),
-  stream: z.enum(["stdout", "stderr", "combined"]).optional().describe("Log stream (default: combined)"),
-});
-
-const GetUrlSchema = z.object({
-  name: z.string().describe("Process name"),
-});
-
-const RestartProcessSchema = z.object({
-  name: z.string().describe("Process name to restart"),
+// Process tool schemas
+const StartProcessSchema = z.object({
+  name: z.string().describe("Process name from sidecar.yaml"),
+  args: z.string().optional().describe("Additional arguments to pass to the command"),
+  force: z.boolean().optional().describe("Kill any process using the port before starting"),
 });
 
 const StopProcessSchema = z.object({
   name: z.string().describe("Process name to stop"),
 });
 
-const StartProcessSchema = z.object({
-  name: z.string().describe("Process name to start"),
-  args: z.string().optional().describe("Extra arguments to append to the command"),
-  env: z.record(z.string()).optional().describe("Environment variables to override for this start"),
-  force: z.boolean().optional().describe("Kill any process using the configured port before starting"),
+const RestartProcessSchema = z.object({
+  name: z.string().describe("Process name to restart"),
 });
 
 const GetStatusSchema = z.object({
   name: z.string().describe("Process name"),
 });
 
-// Browser tool schemas
-const BrowserListSchema = z.object({
-  processName: z.string().optional().describe("Filter by process name"),
+const GetLogsSchema = z.object({
+  name: z.string().describe("Process name"),
+  stream: z.enum(["stdout", "stderr", "combined"]).optional().describe("Log stream (default: combined)"),
+  tail: z.number().optional().describe("Number of lines to return (default: 100)"),
 });
 
-const BrowserOpenSchema = z.object({
-  processName: z.string().describe("Process name for browser context"),
-  url: z.string().describe("URL to open"),
+const GetUrlSchema = z.object({
+  name: z.string().describe("Process name"),
 });
 
-const BrowserCloseSchema = z.object({
-  processName: z.string().describe("Process name"),
-  tabId: z.string().describe("Tab ID to close"),
-});
-
-const BrowserFocusSchema = z.object({
-  processName: z.string().describe("Process name"),
-  tabId: z.string().describe("Tab ID to focus"),
-});
-
-const BrowserReloadSchema = z.object({
-  processName: z.string().describe("Process name"),
-  tabId: z.string().describe("Tab ID to reload"),
-});
-
-const BrowserScreenshotSchema = z.object({
-  processName: z.string().describe("Process name"),
-  tabId: z.string().describe("Tab ID to screenshot"),
-});
-
-const BrowserEvalSchema = z.object({
-  processName: z.string().describe("Process name"),
-  tabId: z.string().describe("Tab ID"),
-  script: z.string().describe("JavaScript code to execute"),
-});
-
-const BrowserSaveAuthSchema = z.object({
-  processName: z.string().describe("Process name to save auth state for"),
-});
-
-type ToolResponse = {
-  content: Array<{ type: "text"; text: string }>;
-  isError?: boolean;
-};
-
-// Tool definitions
-const TOOLS: Tool[] = [
+// Process tools
+const PROCESS_TOOLS: Tool[] = [
   {
     name: "list_processes",
-    description: "List all configured background processes with their status, PID, port, and URL",
+    description: "List all processes defined in sidecar.yaml with their status",
     inputSchema: {
       type: "object",
       properties: {},
@@ -146,767 +243,293 @@ const TOOLS: Tool[] = [
     },
   },
   {
-    name: "get_logs",
-    description: "Get log output from a background process",
+    name: "start_process",
+    description: "Start a process defined in sidecar.yaml",
     inputSchema: {
       type: "object",
       properties: {
-        name: {
-          type: "string",
-          description: "Process name",
-        },
-        tail: {
-          type: "number",
-          description: "Number of lines to return (default: 100)",
-        },
-        stream: {
-          type: "string",
-          enum: ["stdout", "stderr", "combined"],
-          description: "Log stream to read (default: combined)",
-        },
-      },
-      required: ["name"],
-    },
-  },
-  {
-    name: "get_url",
-    description: "Get the preview URL for a background process",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: {
-          type: "string",
-          description: "Process name",
-        },
-      },
-      required: ["name"],
-    },
-  },
-  {
-    name: "restart_process",
-    description: "Restart a background process",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: {
-          type: "string",
-          description: "Process name to restart",
-        },
+        name: { type: "string", description: "Process name from sidecar.yaml" },
+        args: { type: "string", description: "Additional arguments to pass to the command" },
+        force: { type: "boolean", description: "Kill any process using the port before starting" },
       },
       required: ["name"],
     },
   },
   {
     name: "stop_process",
-    description: "Stop a background process (it will not auto-restart until manually started again)",
+    description: "Stop a running process",
     inputSchema: {
       type: "object",
       properties: {
-        name: {
-          type: "string",
-          description: "Process name to stop",
-        },
+        name: { type: "string", description: "Process name to stop" },
       },
       required: ["name"],
     },
   },
   {
-    name: "start_process",
-    description: "Start a background process (optionally with extra args/env). Use force=true to kill any process using the configured port.",
+    name: "restart_process",
+    description: "Restart a process",
     inputSchema: {
       type: "object",
       properties: {
-        name: {
-          type: "string",
-          description: "Process name to start",
-        },
-        args: {
-          type: "string",
-          description: "Extra arguments to append to the command",
-        },
-        env: {
-          type: "object",
-          description: "Environment variables to override for this start",
-          additionalProperties: { type: "string" },
-        },
-        force: {
-          type: "boolean",
-          description: "Kill any process using the configured port before starting",
-        },
+        name: { type: "string", description: "Process name to restart" },
       },
       required: ["name"],
     },
   },
   {
     name: "get_status",
-    description: "Get detailed status of a single background process",
+    description: "Get detailed status of a process",
     inputSchema: {
       type: "object",
       properties: {
-        name: {
-          type: "string",
-          description: "Process name",
-        },
+        name: { type: "string", description: "Process name" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "get_logs",
+    description: "Get log output from a process",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Process name" },
+        stream: { type: "string", enum: ["stdout", "stderr", "combined"], description: "Log stream (default: combined)" },
+        tail: { type: "number", description: "Number of lines to return (default: 100)" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "get_url",
+    description: "Get the URL for a process (if it has a port)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Process name" },
       },
       required: ["name"],
     },
   },
 ];
 
-// Browser tools (added dynamically when browser is enabled)
-const BROWSER_TOOLS: Tool[] = [
-  {
-    name: "browser_list",
-    description: "List all open browser tabs (optionally filter by process)",
-    inputSchema: {
-      type: "object",
-      properties: {
-        processName: {
-          type: "string",
-          description: "Filter by process name",
-        },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "browser_open",
-    description: "Open a URL in the browser context for a process",
-    inputSchema: {
-      type: "object",
-      properties: {
-        processName: {
-          type: "string",
-          description: "Process name for browser context",
-        },
-        url: {
-          type: "string",
-          description: "URL to open",
-        },
-      },
-      required: ["processName", "url"],
-    },
-  },
-  {
-    name: "browser_close",
-    description: "Close a browser tab",
-    inputSchema: {
-      type: "object",
-      properties: {
-        processName: {
-          type: "string",
-          description: "Process name",
-        },
-        tabId: {
-          type: "string",
-          description: "Tab ID to close",
-        },
-      },
-      required: ["processName", "tabId"],
-    },
-  },
-  {
-    name: "browser_focus",
-    description: "Bring a browser tab to front",
-    inputSchema: {
-      type: "object",
-      properties: {
-        processName: {
-          type: "string",
-          description: "Process name",
-        },
-        tabId: {
-          type: "string",
-          description: "Tab ID to focus",
-        },
-      },
-      required: ["processName", "tabId"],
-    },
-  },
-  {
-    name: "browser_reload",
-    description: "Reload a browser tab",
-    inputSchema: {
-      type: "object",
-      properties: {
-        processName: {
-          type: "string",
-          description: "Process name",
-        },
-        tabId: {
-          type: "string",
-          description: "Tab ID to reload",
-        },
-      },
-      required: ["processName", "tabId"],
-    },
-  },
-  {
-    name: "browser_screenshot",
-    description: "Take a screenshot of a browser tab",
-    inputSchema: {
-      type: "object",
-      properties: {
-        processName: {
-          type: "string",
-          description: "Process name",
-        },
-        tabId: {
-          type: "string",
-          description: "Tab ID to screenshot",
-        },
-      },
-      required: ["processName", "tabId"],
-    },
-  },
-  {
-    name: "browser_eval",
-    description: "Execute JavaScript in a browser tab",
-    inputSchema: {
-      type: "object",
-      properties: {
-        processName: {
-          type: "string",
-          description: "Process name",
-        },
-        tabId: {
-          type: "string",
-          description: "Tab ID",
-        },
-        script: {
-          type: "string",
-          description: "JavaScript code to execute",
-        },
-      },
-      required: ["processName", "tabId", "script"],
-    },
-  },
-  {
-    name: "browser_save_auth",
-    description: "Save browser auth state (cookies, localStorage) to disk for a process",
-    inputSchema: {
-      type: "object",
-      properties: {
-        processName: {
-          type: "string",
-          description: "Process name to save auth state for",
-        },
-      },
-      required: ["processName"],
-    },
-  },
-];
-
-function formatToolError(message: string): ToolResponse {
+function formatToolError(message: string) {
   return {
-    content: [
-      {
-        type: "text",
-        text: `Error: ${message}`,
-      },
-    ],
+    content: [{ type: "text" as const, text: `Error: ${message}` }],
     isError: true,
   };
 }
 
 async function main() {
-  const { configPath } = parseArgs();
+  const parsedArgs = parseArgs();
 
-  // Check if config exists
-  let config;
-  let configDir: string;
-  let resolvedConfigPath: string | undefined;
-  let hasConfig = false;
-  let reuseEnabled = false;
-  let reuseKey: string | undefined;
+  // Handle non-server commands
+  switch (parsedArgs.command) {
+    case "help":
+      showHelp();
+      process.exit(0);
+      break;
 
-  if (configPath) {
-    // Explicit config path provided
-    try {
-      const result = await loadConfig(configPath);
-      config = result.config;
-      configDir = result.configDir;
-      resolvedConfigPath = path.resolve(configPath);
-      hasConfig = true;
-      reuseEnabled = Boolean(config.reuse);
-      reuseKey = typeof config.reuse === "string" ? config.reuse : undefined;
-      console.error(`[sidecar] Loaded config from ${configPath}`);
-    } catch (err) {
-      console.error(`[sidecar] Failed to load config from ${configPath}:`, err);
-      process.exit(1);
-    }
-  } else if (configExists()) {
-    // Auto-detect config in cwd
-    try {
-      const result = await loadConfig();
-      config = result.config;
-      configDir = result.configDir;
-      // Find the actual config file path
-      const fs = await import("fs");
-      for (const filename of ["sidecar.yaml", "sidecar.yml"]) {
-        const candidate = path.join(process.cwd(), filename);
-        if (fs.existsSync(candidate)) {
-          resolvedConfigPath = candidate;
-          break;
-        }
-      }
-      hasConfig = true;
-      reuseEnabled = Boolean(config.reuse);
-      reuseKey = typeof config.reuse === "string" ? config.reuse : undefined;
-      console.error(`[sidecar] Found config in ${configDir}`);
-    } catch (err) {
-      console.error("[sidecar] Failed to load config:", err);
-      process.exit(1);
-    }
-  } else {
-    // No config found - start without processes
-    configDir = process.cwd();
-    console.error("[sidecar] No sidecar.yaml found - starting without processes");
-    console.error("[sidecar] Create sidecar.yaml to define processes");
+    case "sessions":
+      await commandSessions();
+      process.exit(0);
+      break;
+
+    case "attach":
+      await commandAttach(parsedArgs.sessionName);
+      // attach() doesn't return - it replaces the process
+      break;
+
+    case "server":
+      // Continue to MCP server mode below
+      break;
   }
 
-  // Parse status writer options from environment
-  const statusEnabled = process.env.MCP_SIDECAR_STATUS_ENABLED === "true" ||
-                        process.env.MCP_SIDECAR_STATUS_ENABLED === "1";
-  const statusOptions = {
-    enabled: statusEnabled,
-    filePath: process.env.MCP_SIDECAR_STATUS_FILE,
-  };
+  // Server mode: Start MCP server
+  const workspaceDir = process.cwd();
 
-  // Create browser manager if enabled
-  let browserManager: BrowserManager | undefined;
-  const browserEnabled = hasConfig && config?.browser?.enabled && reuseEnabled;
-  if (browserEnabled && config?.browser) {
-    browserManager = new BrowserManager({
-      config: config.browser as BrowserConfig,
-      configDir,
+  // Check if tmux is available (required)
+  if (!(await isTmuxAvailable())) {
+    console.error("[sidecar] Error: tmux is required but not found.");
+    console.error("[sidecar] Install tmux: brew install tmux (macOS) or apt install tmux (Linux)");
+    process.exit(1);
+  }
+
+  // Check if config exists (either specified or in cwd)
+  const hasConfig = parsedArgs.config || configExists();
+  if (!hasConfig) {
+    console.error("[sidecar] No sidecar.yaml found in current directory");
+    console.error("[sidecar] Running in minimal mode - no process management available");
+  }
+
+  // Load config if it exists
+  let config: Awaited<ReturnType<typeof loadConfig>>["config"] | undefined;
+  let configDir: string = workspaceDir;
+  let processManager: ProcessManager | undefined;
+  let tmuxManager: TmuxManager | undefined;
+
+  if (hasConfig) {
+    const loaded = await loadConfig(parsedArgs.config);
+    config = loaded.config;
+    configDir = loaded.configDir;
+
+    // Create tmux session with project name
+    const projectName = path.basename(configDir);
+    tmuxManager = new TmuxManager(projectName, {
+      sessionPrefix: config.settings?.tmuxSessionPrefix,
+      layout: config.settings?.tmuxLayout,
     });
-  }
+    await tmuxManager.createSession();
 
-  // Create process manager with settings from config
-  const processManager = new ProcessManager(configDir, {
-    events: {
-      onProcessReady: async (name) => {
-        logger.info(`Process "${name}" is ready`);
+    console.error(`[sidecar] Created tmux session: ${tmuxManager.sessionName}`);
 
-        // Auto-open browser tab if enabled
-        if (browserManager && browserManager.shouldAutoOpen(name)) {
-          const url = processManager.getUrl(name);
-          if (url) {
-            try {
-              const tabId = await browserManager.openTab(name, url);
-              logger.info(`Opened browser tab for "${name}" (${tabId})`);
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              logger.error(`Failed to open browser tab for "${name}": ${msg}`);
-            }
-          }
-        }
-      },
-      onProcessCrash: (name, exitCode) => {
-        logger.warn(`Process "${name}" crashed (exit code: ${exitCode})`);
-      },
-      onHealthChange: (name, healthy) => {
-        logger.debug(`Process "${name}" health: ${healthy}`);
-      },
-    },
-    statusOptions,
-    reuseEnabled,
-    settings: config?.settings,
-  });
+    // Initialize process manager with tmux
+    processManager = new ProcessManager(configDir, {
+      settings: config.settings,
+      tmuxManager,
+    });
+    await processManager.startAll(config);
 
-  const handleToolCall = async (name: string, args: unknown): Promise<ToolResponse> => {
-    try {
-      switch (name) {
-        case "list_processes": {
-          const processes = processManager.listProcesses();
-          const formatted = processes.map((p) => {
-            const parts = [`${p.name}: ${p.status}`];
-            if (p.pid) parts.push(`pid=${p.pid}`);
-            if (p.port) parts.push(`port=${p.port}`);
-            if (p.url) parts.push(`url=${p.url}`);
-            if (p.healthy !== undefined) parts.push(`healthy=${p.healthy}`);
-            if (p.restartCount > 0) parts.push(`restarts=${p.restartCount}`);
-            if (p.error) parts.push(`error="${p.error}"`);
-            return parts.join(" | ");
-          });
-          return {
-            content: [
-              {
-                type: "text",
-                text: formatted.length > 0 ? formatted.join("\n") : "No processes configured",
-              },
-            ],
-          };
-        }
-
-        case "get_logs": {
-          const parsed = GetLogsSchema.parse(args);
-          const logs = processManager.getLogs(
-            parsed.name,
-            parsed.stream ?? "combined",
-            parsed.tail ?? 100
-          );
-          return {
-            content: [
-              {
-                type: "text",
-                text: logs.length > 0 ? logs.join("\n") : "(no logs)",
-              },
-            ],
-          };
-        }
-
-        case "get_url": {
-          const parsed = GetUrlSchema.parse(args);
-          const url = processManager.getUrl(parsed.name);
-          return {
-            content: [
-              {
-                type: "text",
-                text: url ?? "(no URL - process has no port configured)",
-              },
-            ],
-          };
-        }
-
-        case "restart_process": {
-          const parsed = RestartProcessSchema.parse(args);
-          await processManager.restartProcess(parsed.name);
-          const status = processManager.getStatus(parsed.name);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Process "${parsed.name}" restarted. Status: ${status.status}`,
-              },
-            ],
-          };
-        }
-
-        case "stop_process": {
-          const parsed = StopProcessSchema.parse(args);
-          await processManager.stopProcess(parsed.name);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Process "${parsed.name}" stopped. Use start_process to start it again.`,
-              },
-            ],
-          };
-        }
-
-        case "start_process": {
-          const parsed = StartProcessSchema.parse(args);
-          await processManager.startProcess(parsed.name, {
-            args: parsed.args,
-            env: parsed.env,
-            force: parsed.force,
-          });
-          const status = processManager.getStatus(parsed.name);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Process "${parsed.name}" started. Status: ${status.status}`,
-              },
-            ],
-          };
-        }
-
-        case "get_status": {
-          const parsed = GetStatusSchema.parse(args);
-          const status = processManager.getStatus(parsed.name);
-          const lines = [
-            `Name: ${status.name}`,
-            `Status: ${status.status}`,
-            `PID: ${status.pid ?? "N/A"}`,
-            `Port: ${status.port ?? "N/A"}`,
-            `URL: ${status.url ?? "N/A"}`,
-            `Healthy: ${status.healthy ?? "N/A"}`,
-            `Restart Count: ${status.restartCount}`,
-          ];
-          if (status.lastRestartTime) {
-            lines.push(`Last Restart: ${status.lastRestartTime.toISOString()}`);
-          }
-          if (status.exitCode !== undefined) {
-            lines.push(`Exit Code: ${status.exitCode}`);
-          }
-          if (status.error) {
-            lines.push(`Error: ${status.error}`);
-          }
-          return {
-            content: [
-              {
-                type: "text",
-                text: lines.join("\n"),
-              },
-            ],
-          };
-        }
-
-        // Browser tools
-        case "browser_list": {
-          if (!browserManager) {
-            return formatToolError("Browser automation is not enabled");
-          }
-          const parsed = BrowserListSchema.parse(args);
-          const tabs = await browserManager.listTabs(parsed.processName);
-          if (tabs.length === 0) {
-            return {
-              content: [{ type: "text", text: "No browser tabs open" }],
-            };
-          }
-          const formatted = tabs.map(
-            (t) => `${t.tabId} | ${t.processName} | ${t.url} | ${t.title}`
-          );
-          return {
-            content: [{ type: "text", text: formatted.join("\n") }],
-          };
-        }
-
-        case "browser_open": {
-          if (!browserManager) {
-            return formatToolError("Browser automation is not enabled");
-          }
-          const parsed = BrowserOpenSchema.parse(args);
-          const tabId = await browserManager.openTab(parsed.processName, parsed.url);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Opened tab ${tabId} for process "${parsed.processName}" at ${parsed.url}`,
-              },
-            ],
-          };
-        }
-
-        case "browser_close": {
-          if (!browserManager) {
-            return formatToolError("Browser automation is not enabled");
-          }
-          const parsed = BrowserCloseSchema.parse(args);
-          await browserManager.closeTab(parsed.processName, parsed.tabId);
-          return {
-            content: [
-              { type: "text", text: `Closed tab ${parsed.tabId}` },
-            ],
-          };
-        }
-
-        case "browser_focus": {
-          if (!browserManager) {
-            return formatToolError("Browser automation is not enabled");
-          }
-          const parsed = BrowserFocusSchema.parse(args);
-          await browserManager.focusTab(parsed.processName, parsed.tabId);
-          return {
-            content: [
-              { type: "text", text: `Focused tab ${parsed.tabId}` },
-            ],
-          };
-        }
-
-        case "browser_reload": {
-          if (!browserManager) {
-            return formatToolError("Browser automation is not enabled");
-          }
-          const parsed = BrowserReloadSchema.parse(args);
-          await browserManager.reloadTab(parsed.processName, parsed.tabId);
-          return {
-            content: [
-              { type: "text", text: `Reloaded tab ${parsed.tabId}` },
-            ],
-          };
-        }
-
-        case "browser_screenshot": {
-          if (!browserManager) {
-            return formatToolError("Browser automation is not enabled");
-          }
-          const parsed = BrowserScreenshotSchema.parse(args);
-          const buffer = await browserManager.screenshot(parsed.processName, parsed.tabId);
-          const base64 = buffer.toString("base64");
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Screenshot captured (${buffer.length} bytes, base64 encoded):\ndata:image/png;base64,${base64}`,
-              },
-            ],
-          };
-        }
-
-        case "browser_eval": {
-          if (!browserManager) {
-            return formatToolError("Browser automation is not enabled");
-          }
-          const parsed = BrowserEvalSchema.parse(args);
-          const result = await browserManager.evaluate(
-            parsed.processName,
-            parsed.tabId,
-            parsed.script
-          );
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Result: ${JSON.stringify(result, null, 2)}`,
-              },
-            ],
-          };
-        }
-
-        case "browser_save_auth": {
-          if (!browserManager) {
-            return formatToolError("Browser automation is not enabled");
-          }
-          const parsed = BrowserSaveAuthSchema.parse(args);
-          await browserManager.saveStorageState(parsed.processName);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Saved auth state for process "${parsed.processName}"`,
-              },
-            ],
-          };
-        }
-
-        default:
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Unknown tool: ${name}`,
-              },
-            ],
-            isError: true,
-          };
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return formatToolError(message);
-    }
-  };
-
-  let ipcEndpoint: IpcEndpoint | null = null;
-  let ipcServer: Awaited<ReturnType<typeof startIpcServer>> | null = null;
-  let reuseMode: "disabled" | "daemon" | "proxy" = "disabled";
-
-  if (reuseEnabled && hasConfig) {
-    ipcEndpoint = getIpcEndpoint(configDir, reuseKey);
-    const reachable = await canConnect(ipcEndpoint);
-    if (reachable) {
-      reuseMode = "proxy";
-      console.error(`[sidecar] Reusing running sidecar for ${configDir}`);
+    // Auto-attach terminal if configured
+    if (config.settings?.autoAttachTerminal) {
+      await tmuxManager.openTerminal(config.settings?.terminalApp, configDir);
     } else {
-      try {
-        ipcServer = await startIpcServer(ipcEndpoint, async (method, params) => {
-          return handleToolCall(method, params);
+      console.error(`[sidecar] Attach with: tmux attach -t ${tmuxManager.sessionName}`);
+    }
+  }
+
+  // Tool handler
+  async function handleToolCall(name: string, args: Record<string, unknown>) {
+    switch (name) {
+      case "list_processes": {
+        if (!processManager) {
+          return formatToolError("No sidecar.yaml found - process management not available");
+        }
+        const processes = processManager.listProcesses();
+        if (processes.length === 0) {
+          return {
+            content: [{ type: "text", text: "No processes defined in sidecar.yaml" }],
+          };
+        }
+        const formatted = processes.map((p) => {
+          const parts = [`${p.name}: ${p.status}`];
+          if (p.port) parts.push(`port=${p.port}`);
+          if (p.healthy !== undefined) parts.push(`healthy=${p.healthy}`);
+          if (p.error) parts.push(`error=${p.error}`);
+          return parts.join(" | ");
         });
-        reuseMode = "daemon";
-        console.error(`[sidecar] Started reuse daemon for ${configDir}`);
-      } catch (err) {
-        if (isAddrInUse(err)) {
-          if (await canConnect(ipcEndpoint)) {
-            reuseMode = "proxy";
-            console.error(`[sidecar] Reusing running sidecar for ${configDir}`);
-          } else {
-            cleanupIpcEndpoint(ipcEndpoint);
-            ipcServer = await startIpcServer(ipcEndpoint, async (method, params) => {
-              return handleToolCall(method, params);
-            });
-            reuseMode = "daemon";
-            console.error(`[sidecar] Started reuse daemon for ${configDir}`);
-          }
-        } else {
-          throw err;
-        }
+        return {
+          content: [{ type: "text", text: formatted.join("\n") }],
+        };
       }
-    }
-  }
 
-  // Start all processes if config exists
-  if (hasConfig && config && reuseMode !== "proxy") {
-    try {
-      await processManager.startAll(config);
-      const count = Object.keys(config.processes).length;
-      console.error(`[sidecar] Started ${count} process(es)`);
-    } catch (err) {
-      console.error("[sidecar] Failed to start processes:", err);
-      if (ipcEndpoint && reuseMode === "daemon") {
-        cleanupIpcEndpoint(ipcEndpoint);
-      }
-      process.exit(1);
-    }
-  }
-
-  // Watch env files referenced by processes
-  let envFileWatcher: EnvFileWatcher | undefined;
-  if (hasConfig && config && reuseMode !== "proxy") {
-    envFileWatcher = new EnvFileWatcher({
-      onEnvFileChange: async (processNames, envFilePath) => {
-        const uniqueNames = Array.from(new Set(processNames));
-        console.error(
-          `[sidecar] Env file changed (${envFilePath}), restarting: ${uniqueNames.join(", ")}`
-        );
-        await Promise.all(
-          uniqueNames.map(async (name) => {
-            try {
-              const restarted = await processManager.restartIfRunning(name);
-              if (restarted) {
-                console.error(`[sidecar] Restarted "${name}" after env change`);
-              }
-            } catch (err) {
-              const message = err instanceof Error ? err.message : String(err);
-              console.error(`[sidecar] Failed to restart "${name}": ${message}`);
-            }
-          })
-        );
-      },
-      onError: (error) => {
-        console.error(`[sidecar] Env file watcher error: ${error.message}`);
-      },
-    });
-    envFileWatcher.updateConfig(config, configDir);
-  }
-
-  // Set up config file watcher for hot reload
-  let configWatcher: ConfigWatcher | undefined;
-  if (resolvedConfigPath && reuseMode !== "proxy") {
-    configWatcher = new ConfigWatcher(resolvedConfigPath, {
-      onConfigChange: async (newConfig) => {
-        try {
-          const result = await processManager.reload(newConfig);
-          const changes = [
-            result.added.length > 0 ? `added: ${result.added.join(", ")}` : null,
-            result.removed.length > 0 ? `removed: ${result.removed.join(", ")}` : null,
-            result.changed.length > 0 ? `changed: ${result.changed.join(", ")}` : null,
-          ].filter(Boolean);
-          if (changes.length > 0) {
-            console.error(`[sidecar] Config reloaded (${changes.join("; ")})`);
-          } else {
-            console.error("[sidecar] Config reloaded (no changes)");
-          }
-          envFileWatcher?.updateConfig(newConfig, configDir);
-        } catch (err) {
-          console.error("[sidecar] Failed to reload config:", err);
+      case "start_process": {
+        if (!processManager) {
+          return formatToolError("No sidecar.yaml found - process management not available");
         }
-      },
-      onError: (error) => {
-        console.error(`[sidecar] Config watcher error: ${error.message}`);
-      },
-    });
-    configWatcher.start();
+        const parsed = StartProcessSchema.parse(args);
+        await processManager.startProcess(parsed.name, {
+          args: parsed.args,
+          force: parsed.force,
+        });
+        return {
+          content: [{ type: "text", text: `Process "${parsed.name}" started` }],
+        };
+      }
+
+      case "stop_process": {
+        if (!processManager) {
+          return formatToolError("No sidecar.yaml found - process management not available");
+        }
+        const parsed = StopProcessSchema.parse(args);
+        await processManager.stopProcess(parsed.name);
+        return {
+          content: [{ type: "text", text: `Process "${parsed.name}" stopped` }],
+        };
+      }
+
+      case "restart_process": {
+        if (!processManager) {
+          return formatToolError("No sidecar.yaml found - process management not available");
+        }
+        const parsed = RestartProcessSchema.parse(args);
+        await processManager.restartProcess(parsed.name);
+        return {
+          content: [{ type: "text", text: `Process "${parsed.name}" restarted` }],
+        };
+      }
+
+      case "get_status": {
+        if (!processManager) {
+          return formatToolError("No sidecar.yaml found - process management not available");
+        }
+        const parsed = GetStatusSchema.parse(args);
+        const process = processManager.getProcess(parsed.name);
+        if (!process) {
+          return formatToolError(`Process "${parsed.name}" not found`);
+        }
+        const state = process.getState();
+        const lines = [
+          `Name: ${state.name}`,
+          `Status: ${state.status}`,
+        ];
+        if (state.pid) lines.push(`PID: ${state.pid}`);
+        if (state.port) lines.push(`Port: ${state.port}`);
+        if (state.url) lines.push(`URL: ${state.url}`);
+        if (state.healthy !== undefined) lines.push(`Healthy: ${state.healthy}`);
+        if (state.restartCount > 0) lines.push(`Restart Count: ${state.restartCount}`);
+        if (state.error) lines.push(`Error: ${state.error}`);
+        return {
+          content: [{ type: "text", text: lines.join("\n") }],
+        };
+      }
+
+      case "get_logs": {
+        if (!processManager) {
+          return formatToolError("No sidecar.yaml found - process management not available");
+        }
+        const parsed = GetLogsSchema.parse(args);
+        const proc = processManager.getProcess(parsed.name);
+        if (!proc) {
+          return formatToolError(`Process "${parsed.name}" not found`);
+        }
+
+        // Get logs from tmux pane
+        const tail = parsed.tail ?? 100;
+        const content = await proc.getLogsAsync(tail);
+
+        return {
+          content: [{ type: "text", text: content || "(no logs yet)" }],
+        };
+      }
+
+      case "get_url": {
+        if (!processManager) {
+          return formatToolError("No sidecar.yaml found - process management not available");
+        }
+        const parsed = GetUrlSchema.parse(args);
+        const url = processManager.getUrl(parsed.name);
+        if (!url) {
+          return {
+            content: [{ type: "text", text: `Process "${parsed.name}" has no URL (no port configured or detected)` }],
+          };
+        }
+        return {
+          content: [{ type: "text", text: url }],
+        };
+      }
+
+      default:
+        return formatToolError(`Unknown tool: ${name}`);
+    }
   }
 
   // Create MCP server
   const server = new Server(
     {
       name: "mcp-sidecar",
-      version: "0.1.0",
+      version: "0.4.0",
     },
     {
       capabilities: {
@@ -917,7 +540,13 @@ async function main() {
 
   // Handle tool listing
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const tools = browserEnabled ? [...TOOLS, ...BROWSER_TOOLS] : TOOLS;
+    let tools: Tool[] = [];
+
+    // Process tools (always available if config exists)
+    if (processManager) {
+      tools = [...tools, ...PROCESS_TOOLS];
+    }
+
     return { tools };
   });
 
@@ -925,62 +554,33 @@ async function main() {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
-    if (reuseMode === "proxy") {
-      if (!ipcEndpoint) {
-        return formatToolError("IPC endpoint not available");
-      }
-      try {
-        const response = await callIpc(ipcEndpoint, name, args);
-        if (response.ok) {
-          return response.result as ToolResponse;
-        }
-        return formatToolError(response.error ?? "IPC error");
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return formatToolError(message);
-      }
+    try {
+      return await handleToolCall(name, args as Record<string, unknown>);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[sidecar] Tool call failed: ${name}:`, msg);
+      return formatToolError(msg);
     }
-
-    return handleToolCall(name, args);
   });
 
   // Handle shutdown
+  let isShuttingDown = false;
   async function shutdown() {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+
     console.error("[sidecar] Shutting down...");
 
-    // Stop watchers first to prevent any new changes being processed
-    if (configWatcher) {
-      await configWatcher.stop();
-    }
-    if (envFileWatcher) {
-      await envFileWatcher.stop();
-    }
-
-    // Stop browser before processes (may need process URLs)
-    if (browserManager) {
-      await browserManager.shutdown();
+    try {
+      if (processManager) {
+        await processManager.stopAll();
+      }
+    } catch (err) {
+      console.error("[sidecar] Error during shutdown:", err);
     }
 
-    // Stop all processes and wait for completion
-    await processManager.stopAll();
-
-    // Cleanup status file after processes are stopped
-    processManager.cleanupStatus();
-
-    // Close IPC server after processes are stopped
-    if (ipcServer) {
-      await new Promise<void>((resolve) => {
-        ipcServer!.close(() => resolve());
-      });
-      ipcServer = null;
-    }
-
-    // Cleanup IPC socket file
-    if (ipcEndpoint && reuseMode === "daemon") {
-      cleanupIpcEndpoint(ipcEndpoint);
-    }
-
-    process.exit(0);
+    // Give a moment for cleanup to complete
+    setTimeout(() => process.exit(0), 100);
   }
 
   process.on("SIGINT", shutdown);
@@ -991,6 +591,9 @@ async function main() {
   await server.connect(transport);
 
   console.error("[sidecar] MCP server running");
+  if (processManager && tmuxManager) {
+    console.error(`[sidecar] Managing ${processManager.listProcesses().length} processes in tmux session: ${tmuxManager.sessionName}`);
+  }
 }
 
 main().catch((err) => {

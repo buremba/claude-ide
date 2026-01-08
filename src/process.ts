@@ -1,9 +1,10 @@
-import { spawn, ChildProcess, execFileSync, spawnSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import * as net from "net";
 import { LogBuffer } from "./log-buffer.js";
 import { HealthChecker, HealthCheckOptions } from "./health-checker.js";
 import { ResolvedProcessConfig } from "./config.js";
 import { resolveCommand, resolveEnv, loadEnvFile, EnvContext, tryResolveEnvString } from "./env-resolver.js";
+import { TmuxManager } from "./tmux-manager.js";
 
 /**
  * Find the PID of a process using a specific port
@@ -233,10 +234,11 @@ export class ManagedProcess {
   readonly config: ResolvedProcessConfig;
   readonly configDir: string;
 
-  private childProcess: ChildProcess | null = null;
-  private adoptedPid: number | null = null; // PID of an externally managed process we're tracking
-  private stdout: LogBuffer;
-  private stderr: LogBuffer;
+  // Tmux-based process management
+  private tmuxManager: TmuxManager;
+  private paneId: string | null = null;
+  private lastCapturedOutput = ""; // Track what we've already processed
+
   private combined: LogBuffer;
   private healthChecker: HealthChecker | null = null;
   private healthCheckTarget?: HealthCheckOptions;
@@ -270,16 +272,16 @@ export class ManagedProcess {
     config: ResolvedProcessConfig,
     configDir: string,
     events: ProcessEvents = {},
-    settings: ProcessSettings = DEFAULT_PROCESS_SETTINGS
+    settings: ProcessSettings = DEFAULT_PROCESS_SETTINGS,
+    tmuxManager: TmuxManager
   ) {
     this.name = config.name;
     this.config = config;
     this.configDir = configDir;
     this.events = events;
     this.settings = settings;
+    this.tmuxManager = tmuxManager;
 
-    this.stdout = new LogBuffer(settings.logBufferSize);
-    this.stderr = new LogBuffer(settings.logBufferSize);
     this.combined = new LogBuffer(settings.logBufferSize);
 
     if (config.stdoutPatternVars) {
@@ -309,35 +311,10 @@ export class ManagedProcess {
   }
 
   /**
-   * Adopt an externally running process (for reuse mode)
-   * This tracks the process without managing its lifecycle
-   */
-  private adoptProcess(pid: number): void {
-    this.adoptedPid = pid;
-    this._status = "ready";
-    this._ready = true;
-    this.portDetected = true;
-    this.portVerified = true;
-
-    // Set the port export since we know the port is listening
-    if (this._port !== undefined) {
-      this._exports.port = String(this._port);
-      this.syncExportsMap();
-      this.syncPortMap();
-    }
-
-    // Start health checking if configured
-    this.maybeStartHealthChecker();
-
-    // Notify ready
-    this.events.onReady?.(this);
-  }
-
-  /**
    * Start the process
    */
   async start(options: StartOptions = {}): Promise<void> {
-    if (this.childProcess || this.adoptedPid) {
+    if (this.isRunning()) {
       throw new Error(`Process "${this.name}" is already running`);
     }
 
@@ -350,18 +327,6 @@ export class ManagedProcess {
       const conflictPid = findPortUser(this.config.port);
       if (conflictPid) {
         const shouldForce = options.force ?? this.config.force;
-        const shouldAdopt = options.adoptExisting ?? false;
-
-        if (shouldAdopt) {
-          // Try to adopt the existing process - verify port is actually listening
-          const portListening = await this.tryTcpConnect(this.config.port);
-          if (portListening) {
-            console.error(`[sidecar] Port ${this.config.port} in use by PID ${conflictPid}, adopting existing process`);
-            return this.adoptProcess(conflictPid);
-          }
-          // Port not actually listening, fall through to force/error handling
-          console.error(`[sidecar] Port ${this.config.port} claimed by PID ${conflictPid} but not listening`);
-        }
 
         if (shouldForce) {
           console.error(`[sidecar] Port ${this.config.port} in use by PID ${conflictPid}, force-killing...`);
@@ -381,11 +346,52 @@ export class ManagedProcess {
     this._error = undefined;
     this._exitCode = undefined;
 
-    // Build environment
-    const processEnv: NodeJS.ProcessEnv = { ...process.env };
+    // Build environment variables
+    const processEnv = this.buildEnvironment(options);
+
+    // Resolve command
+    const resolvedCommand = resolveCommand(this.config.command, this.envContext);
+
+    // Validate and resolve extra arguments if provided
+    let fullCommand = resolvedCommand;
+    if (options.args) {
+      const validatedArgs = validateCommandArgs(options.args);
+      const resolvedArgs = resolveCommand(validatedArgs, this.envContext);
+      fullCommand = `${resolvedCommand} ${resolvedArgs}`;
+    }
+
+    // Create pane and run command in tmux
+    this.paneId = await this.tmuxManager.createPane(
+      this.name,
+      fullCommand,
+      this.config.resolvedCwd,
+      processEnv
+    );
+
+    this.lastCapturedOutput = "";
+    console.error(`[sidecar] Started "${this.name}" in tmux pane ${this.paneId}`);
+
+    // Mark as running immediately (port detection happens async)
+    this._status = "running";
+    this.maybeStartHealthChecker();
+    this.maybeStartPortVerification();
+    this.maybeUpdateReadiness();
+  }
+
+  /**
+   * Build environment variables for the process
+   */
+  private buildEnvironment(options: StartOptions): Record<string, string> {
+    const processEnv: Record<string, string> = {};
+
+    // Copy relevant system env vars
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value !== undefined) {
+        processEnv[key] = value;
+      }
+    }
 
     // Load envFile if specified (before other env vars so they can override)
-    // Note: envFile is resolved relative to resolvedCwd (same as cwd, relative to config file)
     if (this.config.envFile) {
       try {
         const envFileVars = loadEnvFile(this.config.envFile, this.configDir);
@@ -405,97 +411,118 @@ export class ManagedProcess {
       ...(this.config.env ?? {}),
       ...(options.env ?? {}),
     };
-    const resolvedEnv = resolveEnv(mergedEnv, this.envContext);
+    const resolvedEnv = resolveEnv(mergedEnv, this.envContext!);
     Object.assign(processEnv, resolvedEnv);
 
-    // Resolve command
-    const resolvedCommand = resolveCommand(this.config.command, this.envContext);
+    return processEnv;
+  }
 
-    // Validate and resolve extra arguments if provided
-    let fullCommand = resolvedCommand;
-    if (options.args) {
-      const validatedArgs = validateCommandArgs(options.args);
-      const resolvedArgs = resolveCommand(validatedArgs, this.envContext);
-      fullCommand = `${resolvedCommand} ${resolvedArgs}`;
+  /**
+   * Handle process exit (when detected from tmux poll)
+   */
+  private handleProcessExit(code: number | null): void {
+    this._exitCode = code ?? undefined;
+    this._ready = false;
+
+    if (this._status !== "stopped") {
+      const exitedSuccessfully = code === 0;
+
+      // For restartPolicy: never, successful exit means "completed" (ready for dependents)
+      if (this.config.restartPolicy === "never" && exitedSuccessfully) {
+        this._status = "completed";
+        this._ready = true;
+        this.events.onReady?.(this);  // Signal ready for dependents
+      } else if (exitedSuccessfully && this.config.restartPolicy === "onFailure") {
+        // For onFailure policy, successful exit is just "stopped", not a crash
+        this._status = "stopped";
+      } else {
+        // Crashed or needs restart
+        this._status = "crashed";
+        this._error = `Exited with code ${code}`;
+        this.events.onCrash?.(this, code);
+      }
     }
 
-    // Spawn the process
-    this.childProcess = spawn(fullCommand, {
-      cwd: this.config.resolvedCwd,
-      env: processEnv,
-      shell: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    this.stopHealthChecker();
+  }
 
-    // Handle stdout
-    this.childProcess.stdout?.on("data", (data: Buffer) => {
-      const text = data.toString();
-      this.stdout.pushLines(text);
-      this.combined.pushLines(text);
+  /**
+   * Check if process is currently running
+   */
+  isRunning(): boolean {
+    return this.paneId !== null && this._status !== "crashed" && this._status !== "stopped" && this._status !== "completed";
+  }
 
-      for (const line of text.split("\n")) {
-        if (line.trim()) {
-          this.handleLogLine(line, "stdout");
-        }
-      }
-    });
+  /**
+   * Check if using tmux mode (always true now)
+   */
+  get usesTmux(): boolean {
+    return true;
+  }
 
-    // Handle stderr
-    this.childProcess.stderr?.on("data", (data: Buffer) => {
-      const text = data.toString();
-      this.stderr.pushLines(text);
-      this.combined.pushLines(text);
+  /**
+   * Poll and update status from tmux pane (called by ProcessManager)
+   * Returns true if the process is still running, false if it exited
+   */
+  async pollTmuxStatus(): Promise<boolean> {
+    if (!this.paneId) {
+      return false;
+    }
 
-      for (const line of text.split("\n")) {
-        if (line.trim()) {
-          this.handleLogLine(line, "stderr");
-        }
-      }
-    });
+    // Get pane status
+    const paneStatus = await this.tmuxManager.getPaneStatus(this.name);
 
-    // Handle exit
-    this.childProcess.on("exit", (code, signal) => {
-      this._exitCode = code ?? undefined;
-      this.childProcess = null;
-      this._ready = false;
-
-      if (this._status !== "stopped") {
-        const exitedSuccessfully = code === 0 && !signal;
-
-        // For restartPolicy: never, successful exit means "completed" (ready for dependents)
-        if (this.config.restartPolicy === "never" && exitedSuccessfully) {
-          this._status = "completed";
-          this._ready = true;
-          this.events.onReady?.(this);  // Signal ready for dependents
-        } else if (exitedSuccessfully && this.config.restartPolicy === "onFailure") {
-          // For onFailure policy, successful exit is just "stopped", not a crash
-          this._status = "stopped";
-        } else {
-          // Crashed or needs restart
-          this._status = "crashed";
-          this._error = signal ? `Killed by signal ${signal}` : `Exited with code ${code}`;
-          this.events.onCrash?.(this, code);
-        }
-      }
-
-      this.stopHealthChecker();
-    });
-
-    // Handle error
-    this.childProcess.on("error", (err) => {
+    if (!paneStatus) {
+      // Pane was deleted externally
       this._status = "crashed";
-      this._error = err.message;
-      this.childProcess = null;
-      this._ready = false;
+      this._error = "Pane was closed externally";
+      this.paneId = null;
       this.events.onCrash?.(this, null);
-      this.stopHealthChecker();
-    });
+      return false;
+    }
 
-    // Mark as running immediately (port detection happens async)
-    this._status = "running";
-    this.maybeStartHealthChecker();
-    this.maybeStartPortVerification();
-    this.maybeUpdateReadiness();
+    // Capture and process new output for port detection
+    await this.captureTmuxOutput();
+
+    if (paneStatus.isDead) {
+      // Process exited
+      this.handleProcessExit(paneStatus.exitStatus ?? null);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Capture tmux pane output and process for port/variable detection
+   */
+  private async captureTmuxOutput(): Promise<void> {
+    const output = await this.tmuxManager.capturePane(this.name, 500);
+    if (!output) return;
+
+    // Find new lines by comparing with last capture
+    // This is a simple approach - we look for new content at the end
+    let newContent = output;
+    if (this.lastCapturedOutput && output.includes(this.lastCapturedOutput.slice(-200))) {
+      // Find where the new content starts
+      const lastChunk = this.lastCapturedOutput.slice(-200);
+      const idx = output.lastIndexOf(lastChunk);
+      if (idx >= 0) {
+        newContent = output.slice(idx + lastChunk.length);
+      }
+    }
+
+    this.lastCapturedOutput = output;
+
+    // Process new lines for port/variable detection
+    if (newContent.trim()) {
+      this.combined.pushLines(newContent);
+      for (const line of newContent.split("\n")) {
+        if (line.trim()) {
+          this.handleLogLine(line, "stdout"); // tmux combines stdout/stderr
+        }
+      }
+    }
   }
 
   /**
@@ -915,40 +942,21 @@ export class ManagedProcess {
     // Increment state sequence to invalidate any pending async operations
     this.stateSequence++;
 
-    // For adopted processes, just stop tracking (don't kill the external process)
-    if (this.adoptedPid) {
-      this.adoptedPid = null;
-      this._status = "stopped";
-      this._ready = false;
-      this.stopHealthChecker();
-      return;
-    }
-
-    if (!this.childProcess) {
-      this._status = "stopped";
-      this._ready = false;
-      return;
-    }
-
     this._status = "stopped";
     this._ready = false;
     this.stopHealthChecker();
 
-    return new Promise((resolve) => {
-      const cp = this.childProcess!;
+    if (this.paneId) {
+      // Send interrupt signal first
+      await this.tmuxManager.sendInterrupt(this.name);
 
-      const forceKill = setTimeout(() => {
-        cp.kill("SIGKILL");
-        resolve();
-      }, stopTimeout);
+      // Wait a bit for graceful shutdown
+      await new Promise((resolve) => setTimeout(resolve, Math.min(stopTimeout, 2000)));
 
-      cp.once("exit", () => {
-        clearTimeout(forceKill);
-        resolve();
-      });
-
-      cp.kill("SIGTERM");
-    });
+      // Kill the pane
+      await this.tmuxManager.killPane(this.name);
+      this.paneId = null;
+    }
   }
 
   /**
@@ -968,7 +976,7 @@ export class ManagedProcess {
     return {
       name: this.name,
       status: this._status,
-      pid: this.childProcess?.pid ?? this.adoptedPid ?? undefined,
+      pid: undefined, // tmux manages the actual pid
       port: this._port,
       url: this._url ?? (this._port ? `http://localhost:${this._port}` : undefined),
       restartCount: this._restartCount,
@@ -980,17 +988,25 @@ export class ManagedProcess {
   }
 
   /**
-   * Get logs
+   * Get logs (synchronous, from buffer)
+   * Note: stdout/stderr are combined in tmux mode
    */
-  getLogs(stream: "stdout" | "stderr" | "combined" = "combined", tail?: number): string[] {
-    switch (stream) {
-      case "stdout":
-        return this.stdout.tail(tail);
-      case "stderr":
-        return this.stderr.tail(tail);
-      case "combined":
-        return this.combined.tail(tail);
+  getLogs(_stream: "stdout" | "stderr" | "combined" = "combined", tail?: number): string[] {
+    // tmux combines stdout/stderr, all streams return the same data
+    return this.combined.tail(tail);
+  }
+
+  /**
+   * Get logs asynchronously (captures fresh output from tmux pane)
+   */
+  async getLogsAsync(lines = 100): Promise<string> {
+    if (this.paneId) {
+      // Capture fresh output from tmux pane
+      return await this.tmuxManager.capturePane(this.name, lines);
     }
+
+    // Fall back to buffered logs if pane not active
+    return this.combined.tail(lines).join("\n");
   }
 
   /**

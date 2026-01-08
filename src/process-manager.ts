@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import { Config, ProcessConfig, ResolvedProcessConfig, resolveProcessConfigs, sortByDependencies, Settings } from "./config.js";
 import { ManagedProcess, ProcessState, StartOptions, ProcessSettings } from "./process.js";
 import { EnvContext } from "./env-resolver.js";
-import { StatusWriter, StatusWriterOptions } from "./status-writer.js";
+import { TmuxManager, TmuxLayout } from "./tmux-manager.js";
 
 // Deep compare two process configs (ignoring computed fields)
 function configsEqual(a: ProcessConfig, b: ProcessConfig): boolean {
@@ -31,9 +31,8 @@ export interface ProcessManagerEvents {
 
 export interface ProcessManagerOptions {
   events?: ProcessManagerEvents;
-  statusOptions?: StatusWriterOptions;
-  reuseEnabled?: boolean; // When true, adopt existing processes instead of failing on port conflicts
-  settings?: Settings; // Configurable settings from config file
+  settings?: Settings;
+  tmuxManager: TmuxManager;
 }
 
 /**
@@ -47,17 +46,21 @@ export class ProcessManager extends EventEmitter {
   private restartTimers = new Map<string, NodeJS.Timeout>();
   private currentConfig: Config | null = null;
   private envContext: EnvContext | null = null;
-  private statusWriter: StatusWriter | null = null;
-  private reuseEnabled: boolean;
   private dependencyTimeout: number;
   private processSettings: ProcessSettings;
   private restartBackoffMax: number;
 
-  constructor(configDir: string, options: ProcessManagerOptions = {}) {
+  // Tmux manager (required)
+  private tmuxManager: TmuxManager;
+  private tmuxPollInterval: NodeJS.Timeout | null = null;
+  private tmuxPollRate = 500; // Fast polling during startup
+  private tmuxSlowPollRate = 3000; // Slow polling after ready
+
+  constructor(configDir: string, options: ProcessManagerOptions) {
     super();
     this.configDir = configDir;
     this.events = options.events ?? {};
-    this.reuseEnabled = options.reuseEnabled ?? false;
+    this.tmuxManager = options.tmuxManager;
 
     // Apply settings from config or use defaults
     const settings = options.settings;
@@ -69,30 +72,13 @@ export class ProcessManager extends EventEmitter {
       restartBackoffMax: settings?.restartBackoffMax ?? 30000,
       processStopTimeout: settings?.processStopTimeout ?? 5000,
     };
-
-    // Initialize status writer if enabled
-    if (options.statusOptions?.enabled) {
-      this.statusWriter = new StatusWriter(configDir, options.statusOptions);
-      console.error(`[sidecar] Status file: ${this.statusWriter.getFilePath()}`);
-    }
   }
 
   /**
-   * Update the status file with current process states
+   * Get the tmux session name
    */
-  private updateStatus(): void {
-    if (this.statusWriter) {
-      this.statusWriter.write(this.listProcesses());
-    }
-  }
-
-  /**
-   * Cleanup status file on shutdown
-   */
-  cleanupStatus(): void {
-    if (this.statusWriter) {
-      this.statusWriter.cleanup();
-    }
+  get tmuxSessionName(): string {
+    return this.tmuxManager.sessionName;
   }
 
   /**
@@ -141,8 +127,8 @@ export class ProcessManager extends EventEmitter {
       await this.startManagedProcess(processConfig);
     }
 
-    // Initial status update
-    this.updateStatus();
+    // Start tmux polling for status updates
+    this.startTmuxPolling();
   }
 
   /**
@@ -165,24 +151,24 @@ export class ProcessManager extends EventEmitter {
           this.events.onProcessReady?.(p.name);
           // Emit event for dependency waiting
           this.emit("processReady", p.name);
-          this.updateStatus();
+          // Adjust poll rate once processes are ready
+          this.adjustTmuxPollRate();
         },
         onCrash: (p, exitCode) => {
           this.events.onProcessCrash?.(p.name, exitCode);
           // Emit event for dependency waiting (in case something is waiting)
           this.emit("processFailed", p.name, exitCode);
           this.handleCrash(p.name, processConfig);
-          this.updateStatus();
         },
         onLog: (p, line, stream) => {
           this.events.onLog?.(p.name, line, stream);
         },
         onHealthChange: (p, healthy) => {
           this.events.onHealthChange?.(p.name, healthy);
-          this.updateStatus();
         },
       },
-      this.processSettings
+      this.processSettings,
+      this.tmuxManager
     );
 
     // Set env context for variable interpolation
@@ -237,13 +223,7 @@ export class ProcessManager extends EventEmitter {
       currentPort: processConfig.port,
     });
 
-    // When reuse is enabled, try to adopt existing processes instead of failing
-    const startOptions: StartOptions = {
-      ...options,
-      adoptExisting: this.reuseEnabled,
-    };
-
-    await managedProcess.start(startOptions);
+    await managedProcess.start(options);
   }
 
   private shouldAutoStart(processConfig: ResolvedProcessConfig): boolean {
@@ -396,7 +376,6 @@ export class ProcessManager extends EventEmitter {
     }
 
     // Update status after reload
-    this.updateStatus();
 
     return { added, removed, changed };
   }
@@ -520,6 +499,9 @@ export class ProcessManager extends EventEmitter {
    * Stop all processes
    */
   async stopAll(): Promise<void> {
+    // Stop tmux polling
+    this.stopTmuxPolling();
+
     // Clear all restart timers
     for (const timer of this.restartTimers.values()) {
       clearTimeout(timer);
@@ -530,8 +512,8 @@ export class ProcessManager extends EventEmitter {
     const stopPromises = Array.from(this.processes.values()).map((p) => p.stop());
     await Promise.all(stopPromises);
 
-    // Update status after stopping all
-    this.updateStatus();
+    // Destroy the tmux session
+    await this.tmuxManager.destroySession();
   }
 
   /**
@@ -659,7 +641,6 @@ export class ProcessManager extends EventEmitter {
     await process.stop();
 
     // Update status
-    this.updateStatus();
   }
 
   /**
@@ -678,5 +659,66 @@ export class ProcessManager extends EventEmitter {
    */
   getProcessNames(): string[] {
     return Array.from(this.processes.keys());
+  }
+
+  // ============================================
+  // Tmux polling methods
+  // ============================================
+
+  /**
+   * Start tmux status polling
+   */
+  private startTmuxPolling(): void {
+    if (this.tmuxPollInterval) return;
+
+    const poll = async () => {
+      await this.pollTmuxProcesses();
+    };
+
+    // Start with fast polling
+    this.tmuxPollInterval = setInterval(poll, this.tmuxPollRate);
+    // Run immediately
+    poll();
+  }
+
+  /**
+   * Stop tmux status polling
+   */
+  private stopTmuxPolling(): void {
+    if (this.tmuxPollInterval) {
+      clearInterval(this.tmuxPollInterval);
+      this.tmuxPollInterval = null;
+    }
+  }
+
+  /**
+   * Adjust poll rate based on process readiness
+   * Fast polling during startup, slow polling once stable
+   */
+  private adjustTmuxPollRate(): void {
+    if (!this.tmuxPollInterval) return;
+
+    // Check if all processes are ready or stable
+    const allReady = Array.from(this.processes.values()).every(
+      (p) => p.isReady || p.status === "stopped" || p.status === "crashed" || p.status === "completed"
+    );
+
+    if (allReady) {
+      // Switch to slow polling
+      this.stopTmuxPolling();
+      this.tmuxPollInterval = setInterval(() => this.pollTmuxProcesses(), this.tmuxSlowPollRate);
+    }
+  }
+
+  /**
+   * Poll all tmux processes for status updates
+   */
+  private async pollTmuxProcesses(): Promise<void> {
+    for (const [, process] of this.processes) {
+      // Only poll running processes
+      if (process.status === "running" || process.status === "starting" || process.status === "ready") {
+        await process.pollTmuxStatus();
+      }
+    }
   }
 }

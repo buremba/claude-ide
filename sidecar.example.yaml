@@ -1,15 +1,15 @@
 # Example sidecar.yaml configuration
 # Copy this to your project root as sidecar.yaml
-# To install: claude plugin install /Users/burakemre/Code/ai-experiments/mcp-sidecar
 
-reuse: true
-
-# Optional browser automation (requires reuse: true)
-# browser:
-#   enabled: true
-#   headless: false
-#   userDataDir: ./.mcp-sidecar-browser
-#   copyProfileFrom: auto  # auto, null (fresh), or a custom profile path
+# Optional settings
+# settings:
+#   logBufferSize: 1000        # Number of log lines to keep per process
+#   healthCheckInterval: 10000  # Health check interval in ms
+#   dependencyTimeout: 60000    # Timeout waiting for dependencies in ms
+#   restartBackoffMax: 30000    # Max restart backoff in ms
+#   processStopTimeout: 5000    # Graceful stop timeout in ms
+#   autoAttachTerminal: true    # Auto-open terminal attached to tmux session
+#   terminalApp: auto           # Terminal to use: auto, ghostty, iterm, kitty, terminal
 
 processes:
   # Frontend dev server - port auto-detected from output
@@ -51,12 +51,3 @@ processes:
     healthCheck: /health
     dependsOn: build
     restartPolicy: onFailure
-
-  # VS Code in Browser (using code-server)
-  # Install: brew install code-server OR npm install -g code-server
-  # Access: Browser will auto-open when process is ready
-  vscode:
-    command: code-server --bind-addr localhost:$PORT --auth none .
-    port: 8443
-    restartPolicy: onFailure
-    autoStart: false  # Start manually with start_process

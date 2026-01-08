@@ -1,94 +1,76 @@
 #!/bin/bash
 # mcp-sidecar statusline script
-# Reads process status from JSON and formats for Claude Code's statusline
+# Shows tmux session name and process status for easy attach
 #
 # Only shows output if sidecar.yaml exists in the current directory
-# and there's a valid status file from the MCP server
 
 # Read stdin (Claude Code passes session context as JSON)
-cat > /dev/null
+INPUT=$(cat)
 
-# Check if sidecar.yaml exists in current directory
-if [ ! -f "sidecar.yaml" ] && [ ! -f "sidecar.yml" ]; then
-  # No sidecar config, output nothing
+# Get workspace directory from JSON input, fallback to pwd
+if command -v jq &>/dev/null; then
+  WORKSPACE_DIR=$(echo "$INPUT" | jq -r '.workspace.current_dir // .cwd // empty' 2>/dev/null)
+fi
+if [ -z "$WORKSPACE_DIR" ]; then
+  WORKSPACE_DIR=$(pwd)
+fi
+
+# Check if sidecar.yaml exists in workspace directory
+if [ ! -f "$WORKSPACE_DIR/sidecar.yaml" ] && [ ! -f "$WORKSPACE_DIR/sidecar.yml" ]; then
   echo ""
   exit 0
 fi
 
-# Find the most recent status file
-STATUS_FILE=$(ls -t /tmp/mcp-sidecar-status-*.json 2>/dev/null | head -1)
+# Get project name for session lookup
+PROJECT_NAME=$(basename "$WORKSPACE_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')
+SESSION_NAME="sidecar-${PROJECT_NAME}"
 
-# Check if file exists
-if [ ! -f "$STATUS_FILE" ]; then
-  echo ""
-  exit 0
-fi
-
-# Check if file is stale (older than 30 seconds = sidecar not running)
-if [ "$(uname)" = "Darwin" ]; then
-  FILE_AGE=$(($(date +%s) - $(stat -f %m "$STATUS_FILE")))
-else
-  FILE_AGE=$(($(date +%s) - $(stat -c %Y "$STATUS_FILE")))
-fi
-
-if [ "$FILE_AGE" -gt 30 ]; then
-  echo ""
-  exit 0
+# Check if tmux session exists
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+  # Try with suffix
+  SESSION_NAME=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep "^sidecar-${PROJECT_NAME}" | head -1)
+  if [ -z "$SESSION_NAME" ]; then
+    echo ""
+    exit 0
+  fi
 fi
 
 # ANSI colors
+CYAN='\033[36m'
 GREEN='\033[32m'
 RED='\033[31m'
 YELLOW='\033[33m'
+GRAY='\033[90m'
 RESET='\033[0m'
 
-# Parse JSON and format output
-if command -v jq &>/dev/null; then
-  OUTPUT=$(jq -r '
-    .processes | map(
-      .name +
-      (if .port then ":" + (.port | tostring) else "" end) +
-      " " +
-      (if .status == "ready" or .status == "running" or .status == "completed" then
-        (if .healthy == false then "!" else "✓" end)
-      elif .status == "crashed" then "✗"
-      elif .status == "starting" then "…"
-      else "○" end)
-    ) | join(" │ ")
-  ' "$STATUS_FILE" 2>/dev/null || echo "")
+# Get pane info from tmux
+PANE_INFO=$(tmux list-panes -t "$SESSION_NAME" -F '#{pane_title}:#{pane_dead}' 2>/dev/null)
+
+# Count panes and their status
+TOTAL=0
+RUNNING=0
+DEAD=0
+
+while IFS= read -r line; do
+  if [ -n "$line" ]; then
+    TOTAL=$((TOTAL + 1))
+    if [[ "$line" == *":1" ]]; then
+      DEAD=$((DEAD + 1))
+    else
+      RUNNING=$((RUNNING + 1))
+    fi
+  fi
+done <<< "$PANE_INFO"
+
+# Build status indicator
+if [ "$DEAD" -gt 0 ]; then
+  STATUS="${RED}${DEAD}✗${RESET}"
+elif [ "$RUNNING" -gt 0 ]; then
+  STATUS="${GREEN}${RUNNING}✓${RESET}"
 else
-  # Node.js fallback
-  OUTPUT=$(node -e "
-    const fs = require('fs');
-    try {
-      const data = JSON.parse(fs.readFileSync('$STATUS_FILE', 'utf8'));
-      const parts = data.processes.map(p => {
-        let part = p.name;
-        if (p.port) part += ':' + p.port;
-        if (['ready', 'running', 'completed'].includes(p.status)) {
-          part += p.healthy === false ? ' !' : ' ✓';
-        } else if (p.status === 'crashed') {
-          part += ' ✗';
-        } else if (p.status === 'starting') {
-          part += ' …';
-        } else {
-          part += ' ○';
-        }
-        return part;
-      });
-      console.log(parts.join(' │ '));
-    } catch { console.log(''); }
-  " 2>/dev/null || echo "")
+  STATUS="${GRAY}○${RESET}"
 fi
 
-# Add colors
-if [ -n "$OUTPUT" ]; then
-  OUTPUT=$(echo "$OUTPUT" | sed \
-    -e "s/✓/${GREEN}✓${RESET}/g" \
-    -e "s/✗/${RED}✗${RESET}/g" \
-    -e "s/!/${YELLOW}!${RESET}/g" \
-    -e "s/…/${YELLOW}…${RESET}/g")
-  echo -e "$OUTPUT"
-else
-  echo ""
-fi
+# Output: [session-name] status
+SHORT_SESSION=$(echo "$SESSION_NAME" | sed 's/^sidecar-//')
+echo -e "${CYAN}[${SHORT_SESSION}]${RESET} ${STATUS}"

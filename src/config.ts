@@ -35,48 +35,28 @@ export const ProcessConfigSchema = z.object({
 
 export type ProcessConfig = z.infer<typeof ProcessConfigSchema>;
 
-// Schema for browser configuration
-export const BrowserConfigSchema = z.object({
-  enabled: z.boolean().default(false).describe("Enable browser automation"),
-  headless: z.boolean().default(false).describe("Run browser in headless mode"),
-  storageStateDir: z
-    .string()
-    .optional()
-    .describe("Directory to persist browser auth state (relative to config file)"),
-  persistByDefault: z
-    .boolean()
-    .default(false)
-    .describe("Persist storageState by default for all contexts"),
-  autoOpen: z
-    .union([z.boolean(), z.array(z.string())])
-    .default(true)
-    .describe("Auto-open tabs when processes become ready: true (all), false (none), or array of process names"),
-  userDataDir: z
-    .string()
-    .optional()
-    .describe("Browser user data directory (relative to config file). Default: OS temp dir"),
-  copyProfileFrom: z
-    .union([z.string(), z.null()])
-    .default("auto")
-    .describe(
-      "Copy Chrome profile from path (relative to config file). 'auto' = detect default Chrome profile, null = fresh browser, string = custom path"
-    ),
-  bookmarks: z
-    .array(
-      z.object({
-        name: z.string().describe("Bookmark name"),
-        url: z.string().describe("Bookmark URL"),
-      })
-    )
-    .optional()
-    .describe("Bookmarks to add to the browser"),
-  extensions: z
-    .array(z.string())
-    .optional()
-    .describe("Chrome extension IDs to install from Chrome Web Store"),
-});
+// Tmux layout types
+export const TmuxLayoutSchema = z.enum([
+  "tiled",
+  "even-horizontal",
+  "even-vertical",
+  "main-horizontal",
+  "main-vertical",
+]).default("tiled");
 
-export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
+export type TmuxLayout = z.infer<typeof TmuxLayoutSchema>;
+
+// Terminal app types (warp not supported - falls back to terminal)
+export const TerminalAppSchema = z.enum([
+  "auto",
+  "ghostty",
+  "iterm",
+  "kitty",
+  "terminal",
+]).default("auto");
+
+export type TerminalApp = z.infer<typeof TerminalAppSchema>;
+
 
 // Schema for configurable settings
 export const SettingsSchema = z.object({
@@ -110,18 +90,28 @@ export const SettingsSchema = z.object({
     .max(60000)
     .default(5000)
     .describe("Timeout for graceful process stop in milliseconds (default: 5000)"),
+  // Tmux settings
+  tmuxLayout: TmuxLayoutSchema
+    .describe("Default tmux layout for panes (default: tiled)"),
+  tmuxSessionPrefix: z
+    .string()
+    .default("sidecar")
+    .describe("Prefix for tmux session names (default: sidecar)"),
+  // Auto-attach terminal
+  autoAttachTerminal: z
+    .boolean()
+    .default(false)
+    .describe("Auto-open terminal attached to tmux session"),
+  // Terminal app preference
+  terminalApp: TerminalAppSchema
+    .describe("Terminal app to use: auto (detect), ghostty, iterm, kitty, warp, terminal"),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
 
 // Schema for the full config file
 export const ConfigSchema = z.object({
-  reuse: z
-    .union([z.boolean(), z.string().min(1)])
-    .default(false)
-    .describe("Reuse a single process manager per config directory (true) or with a custom key"),
   settings: SettingsSchema.optional().describe("Global settings for the sidecar"),
-  browser: BrowserConfigSchema.optional().describe("Browser automation configuration"),
   processes: z.record(ProcessConfigSchema),
 });
 
