@@ -551,10 +551,11 @@ async function main() {
       cwd: configDir,  // Project root for resolving .sidecar/interactive paths
     });
 
-    // Auto-attach terminal if configured
-    if (config.settings?.autoAttachTerminal) {
+    // Auto-attach terminal if configured and there are processes to show
+    const hasProcesses = Object.keys(config.processes || {}).length > 0;
+    if (config.settings?.autoAttachTerminal && hasProcesses) {
       await tmuxManager.openTerminal(config.settings?.terminalApp, configDir);
-    } else {
+    } else if (hasProcesses) {
       console.error(`[sidecar] Attach with: tmux attach -t ${tmuxManager.sessionName}`);
     }
   }
