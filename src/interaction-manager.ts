@@ -110,12 +110,15 @@ export class InteractionManager extends EventEmitter {
   }
 
   private findInkRunnerPath(): string {
-    // Try to find ink-runner relative to this file
+    // Try to find ink-runner relative to this module's location
+    // __dirname is dist/ so go up one level to find packages/
+    const moduleRoot = path.join(__dirname, "..");
+
     const possiblePaths = [
-      // Development: packages/ink-runner
+      // Primary: relative to this module (works when mcp-sidecar is installed)
+      path.join(moduleRoot, "packages", "ink-runner", "dist", "index.js"),
+      // Development: relative to cwd (when running from source)
       path.join(process.cwd(), "packages", "ink-runner", "dist", "index.js"),
-      // Installed as sibling
-      path.join(__dirname, "..", "packages", "ink-runner", "dist", "index.js"),
       // npm global or local node_modules
       "ink-runner",
     ];
@@ -126,8 +129,10 @@ export class InteractionManager extends EventEmitter {
       }
     }
 
-    // Default to the relative path
-    return possiblePaths[0];
+    // Default to module-relative path with helpful error context
+    const defaultPath = possiblePaths[0];
+    console.error(`[sidecar] Warning: ink-runner not found at expected path: ${defaultPath}`);
+    return defaultPath;
   }
 
   /**
