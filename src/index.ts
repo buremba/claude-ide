@@ -231,6 +231,17 @@ const GetUrlSchema = z.object({
   name: z.string().describe("Process name"),
 });
 
+// Dynamic terminal schemas
+const CreateTerminalSchema = z.object({
+  name: z.string().describe("Unique name for the terminal"),
+  command: z.string().describe("Command to run in the terminal"),
+  group: z.string().optional().describe("Group to place the terminal in (default: 'dynamic')"),
+});
+
+const RemoveTerminalSchema = z.object({
+  name: z.string().describe("Name of the terminal to remove"),
+});
+
 // Process tools
 const PROCESS_TOOLS: Tool[] = [
   {
@@ -308,6 +319,30 @@ const PROCESS_TOOLS: Tool[] = [
       type: "object",
       properties: {
         name: { type: "string", description: "Process name" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "create_terminal",
+    description: "Create a dynamic terminal pane running a command. The terminal is placed in the specified layout group.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Unique name for the terminal" },
+        command: { type: "string", description: "Command to run in the terminal" },
+        group: { type: "string", description: "Group to place the terminal in (default: 'dynamic')" },
+      },
+      required: ["name", "command"],
+    },
+  },
+  {
+    name: "remove_terminal",
+    description: "Remove a dynamic terminal by name",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Name of the terminal to remove" },
       },
       required: ["name"],
     },
@@ -519,6 +554,39 @@ async function main() {
         }
         return {
           content: [{ type: "text", text: url }],
+        };
+      }
+
+      case "create_terminal": {
+        if (!processManager) {
+          return formatToolError("No sidecar.yaml found - process management not available");
+        }
+        const parsed = CreateTerminalSchema.parse(args);
+        const terminal = await processManager.createDynamicTerminal(
+          parsed.name,
+          parsed.command,
+          parsed.group
+        );
+        const groups = processManager.getAvailableGroups();
+        return {
+          content: [{
+            type: "text",
+            text: `Created terminal "${terminal.name}" in group "${terminal.group}"\n` +
+              `Command: ${terminal.command}\n` +
+              `Pane ID: ${terminal.paneId}\n` +
+              (groups.length > 1 ? `Available groups: ${groups.join(", ")}` : "")
+          }],
+        };
+      }
+
+      case "remove_terminal": {
+        if (!processManager) {
+          return formatToolError("No sidecar.yaml found - process management not available");
+        }
+        const parsed = RemoveTerminalSchema.parse(args);
+        await processManager.removeDynamicTerminal(parsed.name);
+        return {
+          content: [{ type: "text", text: `Removed terminal "${parsed.name}"` }],
         };
       }
 

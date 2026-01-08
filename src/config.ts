@@ -46,10 +46,10 @@ export const SimpleLayoutSchema = z.enum([
 
 export type SimpleLayout = z.infer<typeof SimpleLayoutSchema>;
 
-// Grouped layout with explicit process arrangement
+// Grouped layout with explicit process arrangement using named groups
 export const GroupedLayoutSchema = z.object({
   type: z.enum(["rows", "columns"]).describe("Arrange groups as rows (top to bottom) or columns (left to right)"),
-  groups: z.array(z.array(z.string())).min(1).describe("Array of process name groups"),
+  groups: z.record(z.string(), z.array(z.string())).describe("Named groups of processes: { servers: [frontend, backend], tools: [worker] }"),
 });
 
 export type GroupedLayout = z.infer<typeof GroupedLayoutSchema>;
@@ -71,6 +71,16 @@ export const LAYOUT_TO_TMUX: Record<SimpleLayout, string> = {
 // Helper to check if layout is grouped
 export function isGroupedLayout(layout: Layout): layout is GroupedLayout {
   return typeof layout === "object" && "type" in layout && "groups" in layout;
+}
+
+// Get ordered group names from a grouped layout
+export function getGroupNames(layout: GroupedLayout): string[] {
+  return Object.keys(layout.groups);
+}
+
+// Get group entries in order: [groupName, processes[]]
+export function getGroupEntries(layout: GroupedLayout): [string, string[]][] {
+  return Object.entries(layout.groups);
 }
 
 // Terminal app types (warp not supported - falls back to terminal)

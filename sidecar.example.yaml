@@ -9,12 +9,15 @@
 #   layout: main-left   # First process large on left
 #   layout: main-top    # First process large on top
 #
-# Grouped layouts (explicit arrangement):
+# Grouped layouts with named groups:
 #   layout:
 #     type: rows        # or "columns"
 #     groups:
-#       - [frontend, backend]   # top row
-#       - [worker, api]         # bottom row
+#       servers: [frontend, backend]   # top row (named "servers")
+#       tools: [worker, api]           # bottom row (named "tools")
+#
+# Named groups enable dynamic terminals via MCP:
+#   create_terminal(name="debug", command="bash", group="tools")
 
 # Optional settings
 # settings:

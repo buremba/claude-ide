@@ -1,8 +1,17 @@
 import { EventEmitter } from "events";
-import { Config, ProcessConfig, ResolvedProcessConfig, resolveProcessConfigs, sortByDependencies, Settings } from "./config.js";
+import { Config, ProcessConfig, ResolvedProcessConfig, resolveProcessConfigs, sortByDependencies, Settings, isGroupedLayout } from "./config.js";
 import { ManagedProcess, ProcessState, StartOptions, ProcessSettings } from "./process.js";
 import { EnvContext } from "./env-resolver.js";
 import { TmuxManager } from "./tmux-manager.js";
+
+// Dynamic terminal info
+export interface DynamicTerminal {
+  name: string;
+  command: string;
+  group: string;
+  paneId: string;
+  createdAt: Date;
+}
 
 // Deep compare two process configs (ignoring computed fields)
 function configsEqual(a: ProcessConfig, b: ProcessConfig): boolean {
@@ -55,6 +64,9 @@ export class ProcessManager extends EventEmitter {
   private tmuxPollInterval: NodeJS.Timeout | null = null;
   private tmuxPollRate = 500; // Fast polling during startup
   private tmuxSlowPollRate = 3000; // Slow polling after ready
+
+  // Dynamic terminals (created at runtime via MCP tools)
+  private dynamicTerminals = new Map<string, DynamicTerminal>();
 
   constructor(configDir: string, options: ProcessManagerOptions) {
     super();
@@ -659,6 +671,103 @@ export class ProcessManager extends EventEmitter {
    */
   getProcessNames(): string[] {
     return Array.from(this.processes.keys());
+  }
+
+  // ============================================
+  // Dynamic terminal methods
+  // ============================================
+
+  /**
+   * Get available group names for dynamic terminals
+   */
+  getAvailableGroups(): string[] {
+    const groups = this.tmuxManager.getGroupNames();
+    // Always include "dynamic" as a fallback group
+    if (!groups.includes("dynamic")) {
+      groups.push("dynamic");
+    }
+    return groups;
+  }
+
+  /**
+   * Create a dynamic terminal in a specific group
+   */
+  async createDynamicTerminal(name: string, command: string, group?: string): Promise<DynamicTerminal> {
+    // Check if name is already used by a configured process
+    if (this.processes.has(name)) {
+      throw new Error(`Name "${name}" is already used by a configured process`);
+    }
+
+    // Check if name is already used by a dynamic terminal
+    if (this.dynamicTerminals.has(name)) {
+      throw new Error(`Dynamic terminal "${name}" already exists`);
+    }
+
+    // Determine target group
+    const availableGroups = this.tmuxManager.getGroupNames();
+    let targetGroup = group ?? "dynamic";
+
+    // If a specific group was requested, validate it exists
+    if (group && availableGroups.length > 0 && !availableGroups.includes(group)) {
+      throw new Error(
+        `Group "${group}" not found. Available groups: ${availableGroups.join(", ")}`
+      );
+    }
+
+    // Create the pane in the specified group
+    const paneId = await this.tmuxManager.createDynamicPane(
+      name,
+      command,
+      this.configDir,
+      targetGroup
+    );
+
+    const terminal: DynamicTerminal = {
+      name,
+      command,
+      group: targetGroup,
+      paneId,
+      createdAt: new Date(),
+    };
+
+    this.dynamicTerminals.set(name, terminal);
+    console.error(`[sidecar] Created dynamic terminal "${name}" in group "${targetGroup}"`);
+
+    return terminal;
+  }
+
+  /**
+   * Remove a dynamic terminal
+   */
+  async removeDynamicTerminal(name: string): Promise<void> {
+    const terminal = this.dynamicTerminals.get(name);
+    if (!terminal) {
+      // Check if it's a configured process
+      if (this.processes.has(name)) {
+        throw new Error(`"${name}" is a configured process, not a dynamic terminal. Use stop_process instead.`);
+      }
+      throw new Error(`Dynamic terminal "${name}" not found`);
+    }
+
+    // Kill the tmux pane
+    await this.tmuxManager.killPane(name);
+
+    this.dynamicTerminals.delete(name);
+    console.error(`[sidecar] Removed dynamic terminal "${name}"`);
+  }
+
+  /**
+   * List all dynamic terminals
+   */
+  listDynamicTerminals(): DynamicTerminal[] {
+    return Array.from(this.dynamicTerminals.values());
+  }
+
+  /**
+   * Get a dynamic terminal by name
+   */
+  getDynamicTerminal(name: string): DynamicTerminal | undefined {
+    return this.dynamicTerminals.get(name);
   }
 
   // ============================================

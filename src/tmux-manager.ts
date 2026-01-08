@@ -1,8 +1,14 @@
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
-import { Layout, SimpleLayout, GroupedLayout, LAYOUT_TO_TMUX, isGroupedLayout } from "./config.js";
+import { Layout, SimpleLayout, GroupedLayout, LAYOUT_TO_TMUX, isGroupedLayout, getGroupEntries } from "./config.js";
 
 const execFileAsync = promisify(execFile);
+
+// Position info for a process in a grouped layout
+export interface GroupPosition {
+  groupName: string;
+  posInGroup: number;
+}
 
 export type TerminalApp = "auto" | "ghostty" | "iterm" | "kitty" | "terminal";
 
@@ -79,30 +85,62 @@ export class TmuxManager {
   readonly sessionName: string;
   private layout: Layout;
   private paneMap = new Map<string, string>(); // processName -> paneId
-  // For grouped layouts: track first pane of each group for splitting
-  private groupFirstPanes: string[] = [];
+  // For grouped layouts: track first pane of each group for splitting (keyed by group name)
+  private groupFirstPanes = new Map<string, string>();
+  // Track group order for determining "previous group"
+  private groupOrder: string[] = [];
 
   constructor(projectName: string, options: TmuxManagerOptions = {}) {
     const prefix = options.sessionPrefix ?? "sidecar";
     this.sessionName = `${prefix}-${this.sanitizeName(projectName)}`;
     this.layout = options.layout ?? "grid";
+
+    // Initialize group order from layout
+    if (isGroupedLayout(this.layout)) {
+      this.groupOrder = Object.keys(this.layout.groups);
+    }
   }
 
   /**
-   * Get the group index and position for a process in grouped layout
-   * Returns [groupIndex, positionInGroup] or null if not found
+   * Get the group name and position for a process in grouped layout
+   * Returns { groupName, posInGroup } or null if not found
    */
-  private getGroupPosition(processName: string): [number, number] | null {
+  private getGroupPosition(processName: string): GroupPosition | null {
     if (!isGroupedLayout(this.layout)) return null;
 
-    for (let groupIdx = 0; groupIdx < this.layout.groups.length; groupIdx++) {
-      const group = this.layout.groups[groupIdx];
-      const posIdx = group.indexOf(processName);
+    for (const [groupName, processes] of Object.entries(this.layout.groups)) {
+      const posIdx = processes.indexOf(processName);
       if (posIdx !== -1) {
-        return [groupIdx, posIdx];
+        return { groupName, posInGroup: posIdx };
       }
     }
     return null;
+  }
+
+  /**
+   * Get the previous group name in order
+   */
+  private getPreviousGroupName(groupName: string): string | null {
+    const idx = this.groupOrder.indexOf(groupName);
+    if (idx <= 0) return null;
+    return this.groupOrder[idx - 1];
+  }
+
+  /**
+   * Get available group names
+   */
+  getGroupNames(): string[] {
+    if (!isGroupedLayout(this.layout)) return [];
+    return [...this.groupOrder];
+  }
+
+  /**
+   * Add a dynamic group (for dynamic terminals when no grouped layout)
+   */
+  addDynamicGroup(groupName: string): void {
+    if (!this.groupOrder.includes(groupName)) {
+      this.groupOrder.push(groupName);
+    }
   }
 
   /**
@@ -221,7 +259,10 @@ export class TmuxManager {
       ]);
       // Track as first pane of first group for grouped layouts
       if (isGroupedLayout(this.layout)) {
-        this.groupFirstPanes[0] = paneId;
+        const firstGroupName = this.groupOrder[0];
+        if (firstGroupName) {
+          this.groupFirstPanes.set(firstGroupName, paneId);
+        }
       }
     } else if (isGroupedLayout(this.layout)) {
       // Grouped layout: split strategically based on group position
@@ -251,13 +292,16 @@ export class TmuxManager {
   /**
    * Create a pane for grouped layout, splitting strategically
    */
-  private async createPaneForGroup(processName: string, shellCommand: string, cwd: string): Promise<string> {
-    if (!isGroupedLayout(this.layout)) {
+  private async createPaneForGroup(processName: string, shellCommand: string, cwd: string, groupNameOverride?: string): Promise<string> {
+    if (!isGroupedLayout(this.layout) && !groupNameOverride) {
       throw new Error("createPaneForGroup called without grouped layout");
     }
 
     const position = this.getGroupPosition(processName);
-    if (!position) {
+    const groupName = groupNameOverride ?? position?.groupName;
+    const posInGroup = position?.posInGroup ?? -1; // -1 means append to end
+
+    if (!groupName) {
       // Process not in any group, just append with default split
       const { stdout } = await execFileAsync("tmux", [
         "split-window",
@@ -272,8 +316,7 @@ export class TmuxManager {
       return stdout.trim();
     }
 
-    const [groupIdx, posInGroup] = position;
-    const isRows = this.layout.type === "rows";
+    const isRows = isGroupedLayout(this.layout) ? this.layout.type === "rows" : true;
 
     // Determine split direction:
     // - rows: groups are stacked vertically, items in group are horizontal
@@ -284,16 +327,20 @@ export class TmuxManager {
     let targetPane: string;
     let splitFlag: string;
 
-    if (posInGroup === 0) {
+    const isFirstInGroup = posInGroup === 0 || !this.groupFirstPanes.has(groupName);
+    const isFirstGroup = this.groupOrder.indexOf(groupName) === 0;
+
+    if (isFirstInGroup) {
       // First item in this group
-      if (groupIdx === 0) {
+      if (isFirstGroup) {
         // First group, first item - this shouldn't happen (handled by respawn above)
         // But just in case, split from session
         targetPane = this.sessionName;
         splitFlag = itemSplitFlag;
       } else {
         // New group - split from first pane of previous group
-        const prevGroupFirstPane = this.groupFirstPanes[groupIdx - 1];
+        const prevGroupName = this.getPreviousGroupName(groupName);
+        const prevGroupFirstPane = prevGroupName ? this.groupFirstPanes.get(prevGroupName) : null;
         if (!prevGroupFirstPane) {
           // Fallback: split from session
           targetPane = this.sessionName;
@@ -304,9 +351,25 @@ export class TmuxManager {
         }
       }
     } else {
-      // Not first in group - split from previous item in same group
-      const prevProcess = this.layout.groups[groupIdx][posInGroup - 1];
-      const prevPane = this.paneMap.get(prevProcess);
+      // Not first in group - split from previous item in same group (or last item if appending)
+      let prevPane: string | undefined;
+
+      if (isGroupedLayout(this.layout) && posInGroup >= 0) {
+        // Find previous process in this group
+        const groupProcesses = this.layout.groups[groupName];
+        if (groupProcesses && posInGroup > 0) {
+          const prevProcess = groupProcesses[posInGroup - 1];
+          prevPane = this.paneMap.get(prevProcess);
+        }
+      }
+
+      // For dynamic terminals or if prev not found, find last pane in this group
+      if (!prevPane) {
+        // Find any pane in this group to split from
+        const groupFirstPane = this.groupFirstPanes.get(groupName);
+        prevPane = groupFirstPane;
+      }
+
       if (!prevPane) {
         // Fallback: split from session
         targetPane = this.sessionName;
@@ -331,14 +394,64 @@ export class TmuxManager {
     const paneId = stdout.trim();
 
     // Track first pane of each group
-    if (posInGroup === 0) {
-      this.groupFirstPanes[groupIdx] = paneId;
+    if (isFirstInGroup) {
+      this.groupFirstPanes.set(groupName, paneId);
     }
 
-    // Rebalance within the group after adding panes
-    // Use even-horizontal for rows layout items, even-vertical for columns layout items
-    // Actually, let's just let the splits handle it naturally and do a final balance
+    return paneId;
+  }
 
+  /**
+   * Create a dynamic pane in a specific group
+   * Used for dynamically created terminals
+   */
+  async createDynamicPane(
+    name: string,
+    command: string,
+    cwd: string,
+    groupName: string,
+    env?: Record<string, string>
+  ): Promise<string> {
+    // Build environment exports
+    let envExports = "";
+    if (env) {
+      const customVars: string[] = [];
+      for (const [key, value] of Object.entries(env)) {
+        if (key === "PORT" || !process.env[key]) {
+          customVars.push(`export ${key}=${this.shellEscape(value)}`);
+        }
+      }
+      if (customVars.length > 0) {
+        envExports = customVars.join("; ") + "; ";
+      }
+    }
+
+    const shellCommand = `cd ${this.shellEscape(cwd)} && ${envExports}${command}`;
+
+    // Ensure the group exists in our tracking
+    this.addDynamicGroup(groupName);
+
+    // Check if this is the very first pane
+    const panes = await this.listPanes();
+    let paneId: string;
+
+    if (panes.length === 1 && !this.paneMap.size) {
+      // First pane - respawn
+      paneId = panes[0].paneId;
+      await execFileAsync("tmux", [
+        "respawn-pane",
+        "-t",
+        paneId,
+        "-k",
+        "sh", "-c", shellCommand,
+      ]);
+      this.groupFirstPanes.set(groupName, paneId);
+    } else {
+      // Create pane in the specified group
+      paneId = await this.createPaneForGroup(name, shellCommand, cwd, groupName);
+    }
+
+    this.paneMap.set(name, paneId);
     return paneId;
   }
 

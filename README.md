@@ -66,6 +66,8 @@ Process "api" restarted
 | `get_status(name)` | Get detailed status |
 | `get_logs(name, tail?)` | Get process logs |
 | `get_url(name)` | Get process URL |
+| `create_terminal(name, command, group?)` | Create a dynamic terminal in a layout group |
+| `remove_terminal(name)` | Remove a dynamic terminal |
 
 ## Configuration
 
@@ -110,23 +112,25 @@ layout: main-left   # First process large on left, others stacked right
 layout: main-top    # First process large on top, others below
 ```
 
-**Grouped layouts** for explicit arrangement:
+**Grouped layouts** with named groups:
 
 ```yaml
-# 2x2 grid with explicit grouping
+# 2x2 grid with named groups
 layout:
   type: rows
   groups:
-    - [frontend, backend]   # top row
-    - [worker, api]         # bottom row
+    servers: [frontend, backend]   # top row
+    tools: [worker, api]           # bottom row
 
 # Or arrange as columns
 layout:
   type: columns
   groups:
-    - [frontend, worker]    # left column
-    - [backend, api]        # right column
+    left: [frontend, worker]       # left column
+    right: [backend, api]          # right column
 ```
+
+Named groups enable dynamic terminals - use `create_terminal(name, command, group)` to add terminals to specific groups at runtime.
 
 ### Port Detection
 
