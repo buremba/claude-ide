@@ -545,9 +545,9 @@ async function main() {
     await processManager.startAll(config);
 
     // Initialize interaction manager for interactive forms
+    // Let InteractionManager find ink-runner relative to its own location
     interactionManager = new InteractionManager({
       tmuxManager,
-      inkRunnerPath: path.join(process.cwd(), "packages", "ink-runner", "dist", "index.js"),
       cwd: configDir,  // Project root for resolving .sidecar/interactive paths
     });
 
