@@ -174,6 +174,23 @@ export class TmuxManager {
    * Returns the final session name (may have suffix if collision)
    */
   async createSession(): Promise<string> {
+    // Check if our exact session already exists and is recent (within 30 seconds)
+    // This handles the case where Claude Code might start the MCP server twice
+    try {
+      const { stdout } = await execFileAsync("tmux", [
+        "display-message", "-t", this.sessionName, "-p", "#{session_created}"
+      ]);
+      const createdTime = parseInt(stdout.trim(), 10) * 1000;
+      const ageMs = Date.now() - createdTime;
+      if (ageMs < 30000) {
+        // Session exists and is recent, reuse it
+        console.error(`[sidecar] Reusing existing session: ${this.sessionName} (created ${Math.round(ageMs / 1000)}s ago)`);
+        return this.sessionName;
+      }
+    } catch {
+      // Session doesn't exist, continue with creation
+    }
+
     // Check for collision and find unique name
     let finalName = this.sessionName;
     let suffix = 0;
@@ -697,6 +714,19 @@ export class TmuxManager {
   async openTerminal(terminalApp?: TerminalApp, cwd?: string): Promise<boolean> {
     const cmd = `tmux attach -t ${this.sessionName}`;
     const insideTmux = isInsideTmux();
+
+    // Check if session already has a client attached (prevent duplicate windows)
+    try {
+      const { stdout } = await execFileAsync("tmux", [
+        "list-clients", "-t", this.sessionName, "-F", "#{client_name}"
+      ]);
+      if (stdout.trim()) {
+        console.error(`[sidecar] Terminal already attached to ${this.sessionName}`);
+        return true;
+      }
+    } catch {
+      // No clients or session doesn't exist, continue
+    }
 
     // Handle explicit "tmux" setting
     if (terminalApp === "tmux") {
