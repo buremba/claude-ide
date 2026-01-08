@@ -135,8 +135,13 @@ settings:
 
   # Terminal settings
   autoAttachTerminal: true    # Auto-open terminal on start
-  terminalApp: auto           # auto, ghostty, iterm, kitty, terminal
+  terminalApp: auto           # auto, tmux, ghostty, iterm, kitty, terminal
 ```
+
+**Terminal app options:**
+- `auto` (default) - If inside tmux, creates a new window; otherwise detects and opens external terminal
+- `tmux` - Always create a tmux window (only works when running inside tmux)
+- `ghostty`, `iterm`, `kitty`, `terminal` - Open specific external terminal app
 
 ### Layout
 

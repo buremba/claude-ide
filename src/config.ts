@@ -86,6 +86,7 @@ export function getGroupEntries(layout: GroupedLayout): [string, string[]][] {
 // Terminal app types (warp not supported - falls back to terminal)
 export const TerminalAppSchema = z.enum([
   "auto",
+  "tmux",      // Use tmux window if inside tmux, otherwise print attach command
   "ghostty",
   "iterm",
   "kitty",

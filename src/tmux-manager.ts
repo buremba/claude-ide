@@ -10,13 +10,20 @@ export interface GroupPosition {
   posInGroup: number;
 }
 
-export type TerminalApp = "auto" | "ghostty" | "iterm" | "kitty" | "terminal";
+export type TerminalApp = "auto" | "tmux" | "ghostty" | "iterm" | "kitty" | "terminal";
+
+/**
+ * Check if we're running inside a tmux session
+ */
+export function isInsideTmux(): boolean {
+  return !!process.env.TMUX;
+}
 
 /**
  * Detect the user's terminal application from environment
  * Note: Warp doesn't support running commands, so we skip it and use Terminal.app
  */
-export function detectTerminal(): Exclude<TerminalApp, "auto" | "warp"> {
+export function detectTerminal(): Exclude<TerminalApp, "auto" | "tmux" | "warp"> {
   const termProgram = process.env.TERM_PROGRAM;
   if (termProgram === "ghostty") return "ghostty";
   if (termProgram === "iTerm.app") return "iterm";
@@ -688,14 +695,35 @@ export class TmuxManager {
    * Supports multiple terminal applications: Ghostty, iTerm2, Kitty, Warp, Terminal.app
    */
   async openTerminal(terminalApp?: TerminalApp, cwd?: string): Promise<boolean> {
+    const cmd = `tmux attach -t ${this.sessionName}`;
+    const insideTmux = isInsideTmux();
+
+    // Handle explicit "tmux" setting
+    if (terminalApp === "tmux") {
+      if (insideTmux) {
+        return this.openInTmuxWindow(cmd);
+      } else {
+        console.error(`[sidecar] Not inside tmux. Attach with: ${cmd}`);
+        return false;
+      }
+    }
+
+    // Handle "auto" - detect tmux first, then fall through to external terminal
+    if (terminalApp === "auto" || !terminalApp) {
+      if (insideTmux) {
+        console.error("[sidecar] Detected tmux environment, creating window");
+        return this.openInTmuxWindow(cmd);
+      }
+      // Fall through to external terminal detection below
+    }
+
+    // External terminals only supported on macOS
     if (process.platform !== "darwin") {
-      console.error(`[sidecar] Auto-attach only supported on macOS. Run: tmux attach -t ${this.sessionName}`);
+      console.error(`[sidecar] Auto-attach only supported on macOS. Run: ${cmd}`);
       return false;
     }
 
     const terminal = terminalApp === "auto" || !terminalApp ? detectTerminal() : terminalApp;
-    const cmd = `tmux attach -t ${this.sessionName}`;
-
     console.error(`[sidecar] Opening terminal: ${terminal}`);
 
     switch (terminal) {
@@ -707,6 +735,31 @@ export class TmuxManager {
         return this.openInKitty(cmd);
       default:
         return this.openInTerminalApp(cmd);
+    }
+  }
+
+  /**
+   * Open sidecar session in a new window of the current tmux session
+   * Only works when already inside tmux
+   */
+  private async openInTmuxWindow(attachCmd: string): Promise<boolean> {
+    if (!process.env.TMUX) {
+      console.error("[sidecar] Not inside tmux, cannot create window");
+      return false;
+    }
+
+    try {
+      // Create new window in current session that runs the attach command
+      await execFileAsync("tmux", [
+        "new-window",
+        "-n", "sidecar",  // Window name
+        attachCmd,        // Command: "tmux attach -t sidecar-xxx"
+      ]);
+      console.error(`[sidecar] Created tmux window attached to ${this.sessionName}`);
+      return true;
+    } catch (err) {
+      console.error("[sidecar] Failed to create tmux window:", err);
+      return false;
     }
   }
 
