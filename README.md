@@ -96,6 +96,38 @@ settings:
   processStopTimeout: 5000    # Graceful stop timeout (ms)
 ```
 
+### Layout
+
+Control how processes are arranged in the tmux session.
+
+**Simple presets** (top-level shortcut):
+
+```yaml
+layout: grid        # Automatic grid (default)
+layout: horizontal  # All processes side by side
+layout: vertical    # All processes stacked
+layout: main-left   # First process large on left, others stacked right
+layout: main-top    # First process large on top, others below
+```
+
+**Grouped layouts** for explicit arrangement:
+
+```yaml
+# 2x2 grid with explicit grouping
+layout:
+  type: rows
+  groups:
+    - [frontend, backend]   # top row
+    - [worker, api]         # bottom row
+
+# Or arrange as columns
+layout:
+  type: columns
+  groups:
+    - [frontend, worker]    # left column
+    - [backend, api]        # right column
+```
+
 ### Port Detection
 
 Ports are automatically detected from process output. Common patterns:

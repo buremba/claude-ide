@@ -31,3 +31,20 @@ Use these tools when the user:
 2. When a user reports issues, check logs first to diagnose
 3. If a process is crashed, offer to restart it
 4. When showing URLs, use the `get_url` tool for accuracy
+
+## Alternative: Direct tmux Access
+
+Processes run in a tmux session. For interactive access (scrolling, real-time logs), users can attach directly:
+
+```bash
+# Find the session name
+tmux list-sessions | grep sidecar
+
+# Attach to the session
+tmux attach -t sidecar-<project-name>
+```
+
+Inside tmux:
+- Navigate panes with `Ctrl+b` then arrow keys
+- Scroll with `Ctrl+b` then `[`, use arrow keys, press `q` to exit scroll mode
+- Detach with `Ctrl+b` then `d`

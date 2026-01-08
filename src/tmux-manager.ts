@@ -1,9 +1,8 @@
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
+import { Layout, SimpleLayout, GroupedLayout, LAYOUT_TO_TMUX, isGroupedLayout } from "./config.js";
 
 const execFileAsync = promisify(execFile);
-
-export type TmuxLayout = "tiled" | "even-horizontal" | "even-vertical" | "main-horizontal" | "main-vertical";
 
 export type TerminalApp = "auto" | "ghostty" | "iterm" | "kitty" | "terminal";
 
@@ -29,7 +28,7 @@ export interface PaneInfo {
 
 export interface TmuxManagerOptions {
   sessionPrefix?: string;
-  layout?: TmuxLayout;
+  layout?: Layout;
 }
 
 /**
@@ -78,13 +77,32 @@ export async function listSidecarSessions(prefix = "sidecar"): Promise<Array<{ n
  */
 export class TmuxManager {
   readonly sessionName: string;
-  private layout: TmuxLayout;
+  private layout: Layout;
   private paneMap = new Map<string, string>(); // processName -> paneId
+  // For grouped layouts: track first pane of each group for splitting
+  private groupFirstPanes: string[] = [];
 
   constructor(projectName: string, options: TmuxManagerOptions = {}) {
     const prefix = options.sessionPrefix ?? "sidecar";
     this.sessionName = `${prefix}-${this.sanitizeName(projectName)}`;
-    this.layout = options.layout ?? "tiled";
+    this.layout = options.layout ?? "grid";
+  }
+
+  /**
+   * Get the group index and position for a process in grouped layout
+   * Returns [groupIndex, positionInGroup] or null if not found
+   */
+  private getGroupPosition(processName: string): [number, number] | null {
+    if (!isGroupedLayout(this.layout)) return null;
+
+    for (let groupIdx = 0; groupIdx < this.layout.groups.length; groupIdx++) {
+      const group = this.layout.groups[groupIdx];
+      const posIdx = group.indexOf(processName);
+      if (posIdx !== -1) {
+        return [groupIdx, posIdx];
+      }
+    }
+    return null;
   }
 
   /**
@@ -201,8 +219,15 @@ export class TmuxManager {
         "-k",  // Kill any existing process
         "sh", "-c", shellCommand,
       ]);
+      // Track as first pane of first group for grouped layouts
+      if (isGroupedLayout(this.layout)) {
+        this.groupFirstPanes[0] = paneId;
+      }
+    } else if (isGroupedLayout(this.layout)) {
+      // Grouped layout: split strategically based on group position
+      paneId = await this.createPaneForGroup(processName, shellCommand, cwd);
     } else {
-      // Create new pane by splitting with the command
+      // Simple layout: split and rebalance
       const { stdout } = await execFileAsync("tmux", [
         "split-window",
         "-t",
@@ -215,11 +240,105 @@ export class TmuxManager {
       ]);
       paneId = stdout.trim();
 
-      // Rebalance layout
+      // Rebalance with simple layout
       await this.applyLayout();
     }
 
     this.paneMap.set(processName, paneId);
+    return paneId;
+  }
+
+  /**
+   * Create a pane for grouped layout, splitting strategically
+   */
+  private async createPaneForGroup(processName: string, shellCommand: string, cwd: string): Promise<string> {
+    if (!isGroupedLayout(this.layout)) {
+      throw new Error("createPaneForGroup called without grouped layout");
+    }
+
+    const position = this.getGroupPosition(processName);
+    if (!position) {
+      // Process not in any group, just append with default split
+      const { stdout } = await execFileAsync("tmux", [
+        "split-window",
+        "-t",
+        this.sessionName,
+        "-P",
+        "-F",
+        "#{pane_id}",
+        "-c", cwd,
+        "sh", "-c", shellCommand,
+      ]);
+      return stdout.trim();
+    }
+
+    const [groupIdx, posInGroup] = position;
+    const isRows = this.layout.type === "rows";
+
+    // Determine split direction:
+    // - rows: groups are stacked vertically, items in group are horizontal
+    // - columns: groups are side by side, items in group are vertical
+    const groupSplitFlag = isRows ? "-v" : "-h";  // Split to create new group
+    const itemSplitFlag = isRows ? "-h" : "-v";   // Split within group
+
+    let targetPane: string;
+    let splitFlag: string;
+
+    if (posInGroup === 0) {
+      // First item in this group
+      if (groupIdx === 0) {
+        // First group, first item - this shouldn't happen (handled by respawn above)
+        // But just in case, split from session
+        targetPane = this.sessionName;
+        splitFlag = itemSplitFlag;
+      } else {
+        // New group - split from first pane of previous group
+        const prevGroupFirstPane = this.groupFirstPanes[groupIdx - 1];
+        if (!prevGroupFirstPane) {
+          // Fallback: split from session
+          targetPane = this.sessionName;
+          splitFlag = groupSplitFlag;
+        } else {
+          targetPane = prevGroupFirstPane;
+          splitFlag = groupSplitFlag;
+        }
+      }
+    } else {
+      // Not first in group - split from previous item in same group
+      const prevProcess = this.layout.groups[groupIdx][posInGroup - 1];
+      const prevPane = this.paneMap.get(prevProcess);
+      if (!prevPane) {
+        // Fallback: split from session
+        targetPane = this.sessionName;
+        splitFlag = itemSplitFlag;
+      } else {
+        targetPane = prevPane;
+        splitFlag = itemSplitFlag;
+      }
+    }
+
+    const { stdout } = await execFileAsync("tmux", [
+      "split-window",
+      splitFlag,
+      "-t",
+      targetPane,
+      "-P",
+      "-F",
+      "#{pane_id}",
+      "-c", cwd,
+      "sh", "-c", shellCommand,
+    ]);
+    const paneId = stdout.trim();
+
+    // Track first pane of each group
+    if (posInGroup === 0) {
+      this.groupFirstPanes[groupIdx] = paneId;
+    }
+
+    // Rebalance within the group after adding panes
+    // Use even-horizontal for rows layout items, even-vertical for columns layout items
+    // Actually, let's just let the splits handle it naturally and do a final balance
+
     return paneId;
   }
 
@@ -331,18 +450,54 @@ export class TmuxManager {
 
   /**
    * Apply layout to the session
+   * For simple layouts: uses tmux's built-in layout
+   * For grouped layouts: already handled by strategic splits
    */
-  async applyLayout(layout?: TmuxLayout): Promise<void> {
-    const layoutToApply = layout ?? this.layout;
+  async applyLayout(layout?: SimpleLayout): Promise<void> {
+    // Skip for grouped layouts - splits handle the arrangement
+    if (isGroupedLayout(this.layout) && !layout) {
+      return;
+    }
+
+    // Determine tmux layout name
+    let tmuxLayout: string;
+    if (layout) {
+      tmuxLayout = LAYOUT_TO_TMUX[layout];
+    } else if (typeof this.layout === "string") {
+      tmuxLayout = LAYOUT_TO_TMUX[this.layout];
+    } else {
+      return; // Grouped layout, skip
+    }
+
     try {
       await execFileAsync("tmux", [
         "select-layout",
         "-t",
         this.sessionName,
-        layoutToApply,
+        tmuxLayout,
       ]);
     } catch {
       // Layout may fail if only one pane
+    }
+  }
+
+  /**
+   * Finalize grouped layout after all panes are created
+   * Evenly distributes space between groups and within groups
+   */
+  async finalizeGroupedLayout(): Promise<void> {
+    if (!isGroupedLayout(this.layout)) return;
+
+    // Use tiled to evenly distribute, it works well for grid-like arrangements
+    try {
+      await execFileAsync("tmux", [
+        "select-layout",
+        "-t",
+        this.sessionName,
+        "tiled",
+      ]);
+    } catch {
+      // Ignore errors
     }
   }
 

@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import { Config, ProcessConfig, ResolvedProcessConfig, resolveProcessConfigs, sortByDependencies, Settings } from "./config.js";
 import { ManagedProcess, ProcessState, StartOptions, ProcessSettings } from "./process.js";
 import { EnvContext } from "./env-resolver.js";
-import { TmuxManager, TmuxLayout } from "./tmux-manager.js";
+import { TmuxManager } from "./tmux-manager.js";
 
 // Deep compare two process configs (ignoring computed fields)
 function configsEqual(a: ProcessConfig, b: ProcessConfig): boolean {

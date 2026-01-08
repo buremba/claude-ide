@@ -35,16 +35,43 @@ export const ProcessConfigSchema = z.object({
 
 export type ProcessConfig = z.infer<typeof ProcessConfigSchema>;
 
-// Tmux layout types
-export const TmuxLayoutSchema = z.enum([
-  "tiled",
-  "even-horizontal",
-  "even-vertical",
-  "main-horizontal",
-  "main-vertical",
-]).default("tiled");
+// Simple layout presets
+export const SimpleLayoutSchema = z.enum([
+  "horizontal",   // Processes side by side (even-horizontal)
+  "vertical",     // Processes stacked (even-vertical)
+  "grid",         // Automatic grid layout (tiled)
+  "main-left",    // First process large on left, others stacked right (main-vertical)
+  "main-top",     // First process large on top, others below (main-horizontal)
+]);
 
-export type TmuxLayout = z.infer<typeof TmuxLayoutSchema>;
+export type SimpleLayout = z.infer<typeof SimpleLayoutSchema>;
+
+// Grouped layout with explicit process arrangement
+export const GroupedLayoutSchema = z.object({
+  type: z.enum(["rows", "columns"]).describe("Arrange groups as rows (top to bottom) or columns (left to right)"),
+  groups: z.array(z.array(z.string())).min(1).describe("Array of process name groups"),
+});
+
+export type GroupedLayout = z.infer<typeof GroupedLayoutSchema>;
+
+// Combined layout type: simple string or grouped object
+export const LayoutSchema = z.union([SimpleLayoutSchema, GroupedLayoutSchema]).default("grid");
+
+export type Layout = z.infer<typeof LayoutSchema>;
+
+// Map simple layout names to tmux layout names
+export const LAYOUT_TO_TMUX: Record<SimpleLayout, string> = {
+  "horizontal": "even-horizontal",
+  "vertical": "even-vertical",
+  "grid": "tiled",
+  "main-left": "main-vertical",
+  "main-top": "main-horizontal",
+};
+
+// Helper to check if layout is grouped
+export function isGroupedLayout(layout: Layout): layout is GroupedLayout {
+  return typeof layout === "object" && "type" in layout && "groups" in layout;
+}
 
 // Terminal app types (warp not supported - falls back to terminal)
 export const TerminalAppSchema = z.enum([
@@ -91,8 +118,8 @@ export const SettingsSchema = z.object({
     .default(5000)
     .describe("Timeout for graceful process stop in milliseconds (default: 5000)"),
   // Tmux settings
-  tmuxLayout: TmuxLayoutSchema
-    .describe("Default tmux layout for panes (default: tiled)"),
+  layout: LayoutSchema
+    .describe("Pane layout: horizontal, vertical, grid, main-left, main-top (default: grid)"),
   tmuxSessionPrefix: z
     .string()
     .default("sidecar")
@@ -111,6 +138,9 @@ export type Settings = z.infer<typeof SettingsSchema>;
 
 // Schema for the full config file
 export const ConfigSchema = z.object({
+  // Top-level shortcuts
+  layout: LayoutSchema.optional().describe("Pane layout shorthand (overrides settings.layout)"),
+  // Full settings
   settings: SettingsSchema.optional().describe("Global settings for the sidecar"),
   processes: z.record(ProcessConfigSchema),
 });

@@ -1,6 +1,21 @@
 # Example sidecar.yaml configuration
 # Copy this to your project root as sidecar.yaml
 
+# Layout options (top-level shortcut):
+# Simple presets:
+#   layout: grid        # Automatic grid (default)
+#   layout: horizontal  # All processes side by side
+#   layout: vertical    # All processes stacked
+#   layout: main-left   # First process large on left
+#   layout: main-top    # First process large on top
+#
+# Grouped layouts (explicit arrangement):
+#   layout:
+#     type: rows        # or "columns"
+#     groups:
+#       - [frontend, backend]   # top row
+#       - [worker, api]         # bottom row
+
 # Optional settings
 # settings:
 #   logBufferSize: 1000        # Number of log lines to keep per process
@@ -8,6 +23,7 @@
 #   dependencyTimeout: 60000    # Timeout waiting for dependencies in ms
 #   restartBackoffMax: 30000    # Max restart backoff in ms
 #   processStopTimeout: 5000    # Graceful stop timeout in ms
+#   layout: grid               # Can also set layout here
 #   autoAttachTerminal: true    # Auto-open terminal attached to tmux session
 #   terminalApp: auto           # Terminal to use: auto, ghostty, iterm, kitty, terminal
 

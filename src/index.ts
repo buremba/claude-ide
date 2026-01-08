@@ -376,9 +376,11 @@ async function main() {
 
     // Create tmux session with project name
     const projectName = path.basename(configDir);
+    // Top-level layout takes precedence over settings.layout
+    const layout = config.layout ?? config.settings?.layout;
     tmuxManager = new TmuxManager(projectName, {
       sessionPrefix: config.settings?.tmuxSessionPrefix,
-      layout: config.settings?.tmuxLayout,
+      layout,
     });
     await tmuxManager.createSession();
 
