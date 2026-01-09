@@ -87,8 +87,23 @@ const CLI_COMMANDS: Record<string, {
   },
   ink: {
     tool: "show_user_interaction",
-    usage: "mcp-ide ink <file.tsx>",
-    parseArgs: (args) => args[1] ? { ink_file: args[1], timeout_ms: 300000 } : null,
+    usage: "mcp-ide ink <file.tsx> [--arg value]",
+    parseArgs: (args) => {
+      if (!args[1]) return null;
+      // Parse additional args as key-value pairs
+      const inkArgs: Record<string, string> = {};
+      for (let i = 2; i < args.length; i += 2) {
+        if (args[i].startsWith("--") && args[i + 1]) {
+          inkArgs[args[i].slice(2)] = args[i + 1];
+        }
+      }
+      return { ink_file: args[1], ink_args: inkArgs, timeout_ms: 300000 };
+    },
+  },
+  plan: {
+    tool: "show_user_interaction",
+    usage: "mcp-ide plan <file.md>",
+    parseArgs: (args) => args[1] ? { ink_file: "__builtin__/plan-viewer.tsx", ink_args: { file: args[1] }, timeout_ms: 600000 } : null,
   },
 };
 
@@ -357,7 +372,11 @@ async function executeCLITool(
     case "show_user_interaction": {
       // Run ink-runner directly in terminal for CLI mode
       const { spawn } = await import("child_process");
-      const { schema, ink_file } = args as { schema?: { questions: Array<{ question: string; header: string; inputType?: string }> }; ink_file?: string };
+      const { schema, ink_file, ink_args } = args as {
+        schema?: { questions: Array<{ question: string; header: string; inputType?: string }> };
+        ink_file?: string;
+        ink_args?: Record<string, string>;
+      };
 
       // Find ink-runner
       const __filename = (await import("url")).fileURLToPath(import.meta.url);
@@ -370,12 +389,21 @@ async function executeCLITool(
         cmdArgs.push("--schema", JSON.stringify(schema));
       }
       if (ink_file) {
-        // Resolve ink file path
-        const cwd = process.cwd();
-        const projectPath = path.join(cwd, ".mide/interactive", ink_file);
-        const globalPath = path.join(process.env.HOME || "", ".mide/interactive", ink_file);
-        const resolvedPath = existsSync(projectPath) ? projectPath : existsSync(globalPath) ? globalPath : ink_file;
+        let resolvedPath: string;
+        if (ink_file.startsWith("__builtin__/")) {
+          // Built-in component
+          resolvedPath = path.join(inkRunnerPath, "components", ink_file.replace("__builtin__/", ""));
+        } else {
+          // Resolve ink file path
+          const cwd = process.cwd();
+          const projectPath = path.join(cwd, ".mide/interactive", ink_file);
+          const globalPath = path.join(process.env.HOME || "", ".mide/interactive", ink_file);
+          resolvedPath = existsSync(projectPath) ? projectPath : existsSync(globalPath) ? globalPath : ink_file;
+        }
         cmdArgs.push("--ink-file", resolvedPath);
+      }
+      if (ink_args) {
+        cmdArgs.push("--args", JSON.stringify(ink_args));
       }
 
       return new Promise((resolve) => {

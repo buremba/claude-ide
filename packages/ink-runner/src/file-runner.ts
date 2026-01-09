@@ -43,6 +43,8 @@ export interface RunFromFileOptions {
   sandbox?: SandboxOptions;
   /** Interaction ID for file-based result communication */
   interactionId?: string;
+  /** Arguments to pass to the component (available as global `args`) */
+  args?: Record<string, unknown>;
 }
 
 /**
@@ -98,6 +100,7 @@ export async function runFromFile(
   try {
     // Create entry file that wraps the user's component
     const interactionIdJson = interactionId ? JSON.stringify(interactionId) : "null";
+    const componentArgsJson = JSON.stringify(options.args || {});
     const entryScript = `
 import { render } from 'ink';
 import React from 'react';
@@ -108,6 +111,9 @@ import Component from ${JSON.stringify(absFilePath)};
 const __interactionId = ${interactionIdJson};
 const __resultFilePath = __interactionId ? '${RESULT_FILE_DIR}/mcp-interaction-' + __interactionId + '.result' : null;
 const __pendingFilePath = __resultFilePath ? __resultFilePath + '.pending' : null;
+
+// Arguments passed to the component
+globalThis.args = ${componentArgsJson};
 
 // Set up the onProgress callback for intermediate updates
 globalThis.onProgress = function(data) {

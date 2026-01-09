@@ -14,27 +14,30 @@ interface CliArgs {
   help?: boolean;
   noSandbox?: boolean;
   interactionId?: string;
+  args?: string;  // JSON string of args to pass to component
 }
 
 function parseArgs(): CliArgs {
-  const args = process.argv.slice(2);
+  const cliArgs = process.argv.slice(2);
   const result: CliArgs = {};
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+  for (let i = 0; i < cliArgs.length; i++) {
+    const arg = cliArgs[i];
 
     if (arg === "--help" || arg === "-h") {
       result.help = true;
     } else if (arg === "--schema" || arg === "-s") {
-      result.schema = args[++i];
-    } else if (arg === "--file" || arg === "-f") {
-      result.file = args[++i];
+      result.schema = cliArgs[++i];
+    } else if (arg === "--file" || arg === "-f" || arg === "--ink-file") {
+      result.file = cliArgs[++i];
     } else if (arg === "--title" || arg === "-t") {
-      result.title = args[++i];
+      result.title = cliArgs[++i];
     } else if (arg === "--no-sandbox") {
       result.noSandbox = true;
     } else if (arg === "--interaction-id" || arg === "-i") {
-      result.interactionId = args[++i];
+      result.interactionId = cliArgs[++i];
+    } else if (arg === "--args" || arg === "-a") {
+      result.args = cliArgs[++i];
     }
   }
 
@@ -135,10 +138,20 @@ async function main(): Promise<void> {
 
   // Mode 2: Custom component from file
   if (args.file) {
+    let componentArgs: Record<string, unknown> = {};
+    if (args.args) {
+      try {
+        componentArgs = JSON.parse(args.args);
+      } catch {
+        console.error("Invalid --args JSON");
+        process.exit(1);
+      }
+    }
     await runFromFile({
       filePath: args.file,
       title: args.title,
       sandbox: { enabled: !args.noSandbox },
+      args: componentArgs,
     });
     return;
   }
