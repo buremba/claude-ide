@@ -50,39 +50,36 @@ processes:
 > "restart the frontend"
 ```
 
-## MCP Tools
+## MCP Tools (8 total)
 
 ### Process Management
 
 | Tool | Description |
 |------|-------------|
-| `list_processes` | List all processes with status |
-| `start_process(name)` | Start a process |
-| `stop_process(name)` | Stop a process |
-| `restart_process(name)` | Restart a process |
-| `get_status(name)` | Get detailed status |
+| `list_processes` | List all processes with status, port, URL, health |
+| `manage_process(name, op)` | Start, stop, or restart a process |
 | `get_logs(name, tail?)` | Get process logs |
-| `get_url(name)` | Get process URL |
 
-### Terminal Panes
-
-| Tool | Description |
-|------|-------------|
-| `create_pane(name, command, group?)` | Create a terminal pane |
-| `remove_pane(name)` | Remove a terminal pane |
-| `set_status(message)` | Update window title/status |
-
-### Interactive Ink Components
+### Panes
 
 | Tool | Description |
 |------|-------------|
-| `show_interaction(schema?, ink_file?, title?, block?)` | Show interactive form or Ink component |
-| `get_interaction_result(id, block?)` | Get result from non-blocking interaction |
-| `cancel_interaction(id)` | Cancel an active interaction |
+| `create_pane(name, command)` | Create a terminal pane |
+| `create_interaction(schema?, ink_file?)` | Show interactive Ink form/component |
+| `remove_pane(name)` | Remove a pane |
+| `capture_pane(name, lines?)` | Capture terminal output |
+
+### Status
+
+| Tool | Description |
+|------|-------------|
+| `set_status(status, message?)` | Update window title/status |
+
+## Interactive Ink Components
 
 **Schema mode** - Define forms inline:
 ```typescript
-show_interaction({
+create_interaction({
   schema: {
     questions: [
       { question: "What's your name?", header: "Name", inputType: "text" },
@@ -94,14 +91,14 @@ show_interaction({
   },
   title: "User Setup"
 })
+// Returns: { action: "accept", answers: { Name: "John", Role: "Developer" } }
 ```
 
 **File mode** - Run custom Ink components:
 ```typescript
-show_interaction({
+create_interaction({
   ink_file: "color-picker.tsx",  // Relative to .mide/interactive/
-  title: "Pick a Color",
-  block: true
+  title: "Pick a Color"
 })
 // Returns: { action: "accept", result: { color: "blue" } }
 ```

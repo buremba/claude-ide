@@ -204,22 +204,11 @@ function formatAge(date: Date): string {
 }
 
 // Process tool schemas
-const StartProcessSchema = z.object({
+const ManageProcessSchema = z.object({
   name: z.string().describe("Process name from mide.yaml"),
-  args: z.string().optional().describe("Additional arguments to pass to the command"),
-  force: z.boolean().optional().describe("Kill any process using the port before starting"),
-});
-
-const StopProcessSchema = z.object({
-  name: z.string().describe("Process name to stop"),
-});
-
-const RestartProcessSchema = z.object({
-  name: z.string().describe("Process name to restart"),
-});
-
-const GetStatusSchema = z.object({
-  name: z.string().describe("Process name"),
+  op: z.enum(["start", "stop", "restart"]).describe("Operation to perform"),
+  args: z.string().optional().describe("Additional arguments (for start)"),
+  force: z.boolean().optional().describe("Kill any process using the port (for start)"),
 });
 
 const GetLogsSchema = z.object({
@@ -228,11 +217,7 @@ const GetLogsSchema = z.object({
   tail: z.number().optional().describe("Number of lines to return (default: 100)"),
 });
 
-const GetUrlSchema = z.object({
-  name: z.string().describe("Process name"),
-});
-
-// Dynamic terminal schemas
+// Pane tool schemas
 const CreatePaneSchema = z.object({
   name: z.string().describe("Unique name for the pane"),
   command: z.string().describe("Command to run in the pane"),
@@ -244,10 +229,9 @@ const RemovePaneSchema = z.object({
   name: z.string().describe("Name of the pane to remove"),
 });
 
-// Test blocking tool schema (for validating progress heartbeats)
-const TestBlockingSchema = z.object({
-  duration_seconds: z.number().describe("How long to block in seconds"),
-  heartbeat_interval_ms: z.number().optional().describe("Progress heartbeat interval in ms (default: 25000)"),
+const CapturePaneSchema = z.object({
+  name: z.string().describe("Name of the pane to capture"),
+  lines: z.number().optional().describe("Number of lines to capture (default: 100)"),
 });
 
 // Interaction tool schemas
@@ -268,22 +252,12 @@ const FormSchemaSchema = z.object({
   questions: z.array(FormQuestionSchema).min(1).describe("Questions to ask"),
 });
 
-const ShowInteractionSchema = z.object({
+const CreateInteractionSchema = z.object({
   schema: FormSchemaSchema.optional().describe("Form schema (AskUserQuestion-compatible)"),
   ink_file: z.string().optional().describe("Path to custom Ink component file (.tsx/.jsx)"),
   title: z.string().optional().describe("Form title"),
   group: z.string().optional().describe("tmux layout group"),
-  timeout_ms: z.number().optional().describe("Auto-cancel after N ms"),
-  block: z.boolean().optional().describe("Block until done (default: true)"),
-});
-
-const GetInteractionResultSchema = z.object({
-  interaction_id: z.string().describe("Interaction ID from non-blocking show_interaction"),
-  block: z.boolean().optional().describe("Wait for result (default: false)"),
-});
-
-const CancelInteractionSchema = z.object({
-  interaction_id: z.string().describe("Interaction ID to cancel"),
+  timeout_ms: z.number().optional().describe("Auto-cancel after N ms (default: blocks indefinitely)"),
 });
 
 const SetStatusSchema = z.object({
@@ -291,11 +265,18 @@ const SetStatusSchema = z.object({
   message: z.string().optional(),
 });
 
-// Process tools
-const PROCESS_TOOLS: Tool[] = [
+// Test blocking tool schema (for internal testing)
+const TestBlockingSchema = z.object({
+  duration_seconds: z.number().describe("How long to block in seconds"),
+  heartbeat_interval_ms: z.number().optional().describe("Progress heartbeat interval in ms (default: 25000)"),
+});
+
+// MCP Tools - Simplified API (8 tools)
+const MCP_TOOLS: Tool[] = [
+  // Process tools (require mide.yaml)
   {
     name: "list_processes",
-    description: "List all processes defined in mide.yaml with their status",
+    description: "List all processes from mide.yaml with full status, port, URL, and health info",
     inputSchema: {
       type: "object",
       properties: {},
@@ -303,49 +284,17 @@ const PROCESS_TOOLS: Tool[] = [
     },
   },
   {
-    name: "start_process",
-    description: "Start a process defined in mide.yaml",
+    name: "manage_process",
+    description: "Start, stop, or restart a process defined in mide.yaml",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Process name from mide.yaml" },
-        args: { type: "string", description: "Additional arguments to pass to the command" },
-        force: { type: "boolean", description: "Kill any process using the port before starting" },
+        op: { type: "string", enum: ["start", "stop", "restart"], description: "Operation to perform" },
+        args: { type: "string", description: "Additional arguments (for start)" },
+        force: { type: "boolean", description: "Kill any process using the port (for start)" },
       },
-      required: ["name"],
-    },
-  },
-  {
-    name: "stop_process",
-    description: "Stop a running process",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Process name to stop" },
-      },
-      required: ["name"],
-    },
-  },
-  {
-    name: "restart_process",
-    description: "Restart a process",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Process name to restart" },
-      },
-      required: ["name"],
-    },
-  },
-  {
-    name: "get_status",
-    description: "Get detailed status of a process",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Process name" },
-      },
-      required: ["name"],
+      required: ["name", "op"],
     },
   },
   {
@@ -355,40 +304,60 @@ const PROCESS_TOOLS: Tool[] = [
       type: "object",
       properties: {
         name: { type: "string", description: "Process name" },
-        stream: { type: "string", enum: ["stdout", "stderr", "combined"], description: "Log stream (default: combined)" },
         tail: { type: "number", description: "Number of lines to return (default: 100)" },
       },
       required: ["name"],
     },
   },
-  {
-    name: "get_url",
-    description: "Get the URL for a process (if it has a port)",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Process name" },
-      },
-      required: ["name"],
-    },
-  },
+  // Pane tools
   {
     name: "create_pane",
-    description: "Create a terminal/process pane running a command. Use for dev servers, build commands, or any shell process. In embedded mode (default when inside tmux), creates pane in current session. In standalone mode, creates in separate IDE session.",
+    description: "Create a terminal pane running a command",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Unique name for the pane" },
-        command: { type: "string", description: "Command to run (e.g., 'npm run dev', 'python server.py')" },
-        group: { type: "string", description: "Group to place the pane in (default: 'dynamic', standalone mode only)" },
-        mode: { type: "string", enum: ["embedded", "standalone"], description: "Tmux mode: embedded (current session) or standalone (separate IDE session)" },
+        command: { type: "string", description: "Command to run (e.g., 'npm run dev')" },
+        group: { type: "string", description: "Layout group (standalone mode only)" },
       },
       required: ["name", "command"],
     },
   },
   {
+    name: "create_interaction",
+    description: "Create an interactive Ink component or form in a pane. Blocks until user completes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        schema: {
+          type: "object",
+          description: "Form schema with questions",
+          properties: {
+            questions: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  question: { type: "string" },
+                  header: { type: "string" },
+                  options: { type: "array" },
+                  multiSelect: { type: "boolean" },
+                  inputType: { type: "string", enum: ["text", "textarea", "password"] },
+                },
+                required: ["question", "header"],
+              },
+            },
+          },
+        },
+        ink_file: { type: "string", description: "Path to Ink component (.tsx) - resolves from .mide/interactive/" },
+        title: { type: "string", description: "Title" },
+        timeout_ms: { type: "number", description: "Auto-cancel timeout in ms" },
+      },
+    },
+  },
+  {
     name: "remove_pane",
-    description: "Remove a terminal/process pane by name",
+    description: "Remove a terminal or interaction pane by name",
     inputSchema: {
       type: "object",
       properties: {
@@ -398,94 +367,28 @@ const PROCESS_TOOLS: Tool[] = [
     },
   },
   {
-    name: "set_status",
-    description: "Update the IDE terminal window title to show current status",
+    name: "capture_pane",
+    description: "Capture terminal output from a pane",
     inputSchema: {
       type: "object",
       properties: {
-        status: {
-          type: "string",
-          enum: ["pending", "running", "completed", "failed"],
-          description: "Current status indicator (⏳ pending, 🔄 running, ✅ completed, ❌ failed)",
-        },
-        message: {
-          type: "string",
-          description: "Custom message (e.g., 'Building project...', '3 tests failed')",
-        },
+        name: { type: "string", description: "Name of the pane" },
+        lines: { type: "number", description: "Number of lines to capture (default: 100)" },
+      },
+      required: ["name"],
+    },
+  },
+  // Status tool
+  {
+    name: "set_status",
+    description: "Update the terminal window title/status indicator",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["pending", "running", "completed", "failed"] },
+        message: { type: "string", description: "Custom message" },
       },
       required: ["status"],
-    },
-  },
-  {
-    name: "test_blocking",
-    description: "Test tool that blocks for a specified duration while sending progress heartbeats. Used to validate timeout handling.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        duration_seconds: { type: "number", description: "How long to block in seconds" },
-        heartbeat_interval_ms: { type: "number", description: "Progress heartbeat interval in ms (default: 25000)" },
-      },
-      required: ["duration_seconds"],
-    },
-  },
-  {
-    name: "show_interaction",
-    description: "Show an interactive form or custom Ink component in a tmux pane and collect user input. By default blocks until user completes the form.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        schema: {
-          type: "object",
-          description: "Form schema with questions (AskUserQuestion-compatible)",
-          properties: {
-            questions: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  question: { type: "string", description: "The question to ask" },
-                  header: { type: "string", description: "Short label (max 12 chars)" },
-                  options: { type: "array", description: "Selection options (omit for text input)" },
-                  multiSelect: { type: "boolean", description: "Allow multiple selections" },
-                  inputType: { type: "string", enum: ["text", "textarea", "password"] },
-                  placeholder: { type: "string" },
-                  validation: { type: "string", description: "Regex pattern" },
-                },
-                required: ["question", "header"],
-              },
-            },
-          },
-          required: ["questions"],
-        },
-        ink_file: { type: "string", description: "Path to custom Ink component file (.tsx/.jsx) - saves tokens!" },
-        title: { type: "string", description: "Form title" },
-        group: { type: "string", description: "tmux layout group" },
-        timeout_ms: { type: "number", description: "Auto-cancel timeout in ms" },
-        block: { type: "boolean", description: "Block until done (default: true)" },
-      },
-    },
-  },
-  {
-    name: "get_interaction_result",
-    description: "Get the result of a non-blocking interaction",
-    inputSchema: {
-      type: "object",
-      properties: {
-        interaction_id: { type: "string", description: "Interaction ID from show_interaction" },
-        block: { type: "boolean", description: "Wait for result (default: false)" },
-      },
-      required: ["interaction_id"],
-    },
-  },
-  {
-    name: "cancel_interaction",
-    description: "Cancel an active interaction",
-    inputSchema: {
-      type: "object",
-      properties: {
-        interaction_id: { type: "string", description: "Interaction ID to cancel" },
-      },
-      required: ["interaction_id"],
     },
   },
 ];
@@ -617,10 +520,15 @@ async function main() {
             content: [{ type: "text", text: "No processes defined in mide.yaml" }],
           };
         }
+        // Return full status including URL
         const formatted = processes.map((p) => {
+          const proc = processManager!.getProcess(p.name);
+          const state = proc?.getState();
           const parts = [`${p.name}: ${p.status}`];
           if (p.port) parts.push(`port=${p.port}`);
+          if (state?.url) parts.push(`url=${state.url}`);
           if (p.healthy !== undefined) parts.push(`healthy=${p.healthy}`);
+          if (state?.pid) parts.push(`pid=${state.pid}`);
           if (p.error) parts.push(`error=${p.error}`);
           return parts.join(" | ");
         });
@@ -629,65 +537,32 @@ async function main() {
         };
       }
 
-      case "start_process": {
+      case "manage_process": {
         if (!processManager) {
           return formatToolError("No mide.yaml found - process management not available");
         }
-        const parsed = StartProcessSchema.parse(args);
-        await processManager.startProcess(parsed.name, {
-          args: parsed.args,
-          force: parsed.force,
-        });
-        return {
-          content: [{ type: "text", text: `Process "${parsed.name}" started` }],
-        };
-      }
-
-      case "stop_process": {
-        if (!processManager) {
-          return formatToolError("No mide.yaml found - process management not available");
+        const parsed = ManageProcessSchema.parse(args);
+        switch (parsed.op) {
+          case "start":
+            await processManager.startProcess(parsed.name, {
+              args: parsed.args,
+              force: parsed.force,
+            });
+            return {
+              content: [{ type: "text", text: `Process "${parsed.name}" started` }],
+            };
+          case "stop":
+            await processManager.stopProcess(parsed.name);
+            return {
+              content: [{ type: "text", text: `Process "${parsed.name}" stopped` }],
+            };
+          case "restart":
+            await processManager.restartProcess(parsed.name);
+            return {
+              content: [{ type: "text", text: `Process "${parsed.name}" restarted` }],
+            };
         }
-        const parsed = StopProcessSchema.parse(args);
-        await processManager.stopProcess(parsed.name);
-        return {
-          content: [{ type: "text", text: `Process "${parsed.name}" stopped` }],
-        };
-      }
-
-      case "restart_process": {
-        if (!processManager) {
-          return formatToolError("No mide.yaml found - process management not available");
-        }
-        const parsed = RestartProcessSchema.parse(args);
-        await processManager.restartProcess(parsed.name);
-        return {
-          content: [{ type: "text", text: `Process "${parsed.name}" restarted` }],
-        };
-      }
-
-      case "get_status": {
-        if (!processManager) {
-          return formatToolError("No mide.yaml found - process management not available");
-        }
-        const parsed = GetStatusSchema.parse(args);
-        const process = processManager.getProcess(parsed.name);
-        if (!process) {
-          return formatToolError(`Process "${parsed.name}" not found`);
-        }
-        const state = process.getState();
-        const lines = [
-          `Name: ${state.name}`,
-          `Status: ${state.status}`,
-        ];
-        if (state.pid) lines.push(`PID: ${state.pid}`);
-        if (state.port) lines.push(`Port: ${state.port}`);
-        if (state.url) lines.push(`URL: ${state.url}`);
-        if (state.healthy !== undefined) lines.push(`Healthy: ${state.healthy}`);
-        if (state.restartCount > 0) lines.push(`Restart Count: ${state.restartCount}`);
-        if (state.error) lines.push(`Error: ${state.error}`);
-        return {
-          content: [{ type: "text", text: lines.join("\n") }],
-        };
+        break;
       }
 
       case "get_logs": {
@@ -706,22 +581,6 @@ async function main() {
 
         return {
           content: [{ type: "text", text: content || "(no logs yet)" }],
-        };
-      }
-
-      case "get_url": {
-        if (!processManager) {
-          return formatToolError("No mide.yaml found - process management not available");
-        }
-        const parsed = GetUrlSchema.parse(args);
-        const url = processManager.getUrl(parsed.name);
-        if (!url) {
-          return {
-            content: [{ type: "text", text: `Process "${parsed.name}" has no URL (no port configured or detected)` }],
-          };
-        }
-        return {
-          content: [{ type: "text", text: url }],
         };
       }
 
@@ -803,6 +662,29 @@ async function main() {
         };
       }
 
+      case "capture_pane": {
+        const parsed = CapturePaneSchema.parse(args);
+        const lines = parsed.lines ?? 100;
+
+        // Try embedded manager first
+        if (embeddedTmuxManager?.hasPane(parsed.name)) {
+          const content = await embeddedTmuxManager.capturePane(parsed.name, lines);
+          return {
+            content: [{ type: "text", text: content || "(no output)" }],
+          };
+        }
+
+        // Try standalone tmux manager
+        if (tmuxManager) {
+          const content = await tmuxManager.capturePane(parsed.name, lines);
+          return {
+            content: [{ type: "text", text: content || "(no output)" }],
+          };
+        }
+
+        return formatToolError("Pane not found or no tmux session active");
+      }
+
       case "set_status": {
         const parsed = SetStatusSchema.parse(args);
 
@@ -819,8 +701,6 @@ async function main() {
           content: [{ type: "text", text: `Status: ${parsed.status}${parsed.message ? ` - ${parsed.message}` : ""}` }],
         };
       }
-
-      // test_blocking is handled separately in the request handler (needs server access)
 
       default:
         return formatToolError(`Unknown tool: ${name}`);
@@ -844,139 +724,16 @@ async function main() {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     let tools: Tool[] = [];
 
-    // Process tools (always available if config exists)
+    // Full mode: all tools available (with mide.yaml)
     if (processManager) {
-      tools = [...tools, ...PROCESS_TOOLS];
+      tools = [...MCP_TOOLS];
     } else if (embeddedTmuxManager) {
-      // Embedded mode: offer terminal tools without full config
-      tools.push(
-        {
-          name: "create_pane",
-          description: "Create a terminal/process pane in the current tmux session. Use for dev servers, build commands, or any shell process.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              name: { type: "string", description: "Unique name for the pane" },
-              command: { type: "string", description: "Command to run (e.g., 'npm run dev', 'python server.py')" },
-            },
-            required: ["name", "command"],
-          },
-        },
-        {
-          name: "remove_pane",
-          description: "Remove a terminal/process pane by name",
-          inputSchema: {
-            type: "object",
-            properties: {
-              name: { type: "string", description: "Name of the pane to remove" },
-            },
-            required: ["name"],
-          },
-        },
-        {
-          name: "set_status",
-          description: "Update the terminal window title to show current status",
-          inputSchema: {
-            type: "object",
-            properties: {
-              status: {
-                type: "string",
-                enum: ["pending", "running", "completed", "failed"],
-                description: "Current status indicator",
-              },
-              message: { type: "string", description: "Custom message" },
-            },
-            required: ["status"],
-          },
-        },
-        {
-          name: "test_blocking",
-          description: "Test tool that blocks for a specified duration while sending progress heartbeats.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              duration_seconds: { type: "number", description: "How long to block in seconds" },
-              heartbeat_interval_ms: { type: "number", description: "Progress heartbeat interval in ms (default: 25000)" },
-            },
-            required: ["duration_seconds"],
-          },
-        },
-        // Interaction tools (ink-runner based)
-        {
-          name: "show_interaction",
-          description: "Show an interactive form or custom Ink component in a tmux pane and collect user input. By default blocks until user completes the form.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              schema: {
-                type: "object",
-                description: "Form schema with questions (AskUserQuestion-compatible)",
-                properties: {
-                  questions: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        question: { type: "string", description: "The question to ask" },
-                        header: { type: "string", description: "Short label (max 12 chars)" },
-                        options: { type: "array", description: "Selection options (omit for text input)" },
-                        multiSelect: { type: "boolean", description: "Allow multiple selections" },
-                        inputType: { type: "string", enum: ["text", "textarea", "password"] },
-                        placeholder: { type: "string" },
-                        validation: { type: "string", description: "Regex pattern" },
-                      },
-                      required: ["question", "header"],
-                    },
-                  },
-                },
-                required: ["questions"],
-              },
-              ink_file: { type: "string", description: "Path to custom Ink component file (.tsx/.jsx) - resolves from ~/.mide/interactive/ or .mide/interactive/" },
-              title: { type: "string", description: "Form title" },
-              timeout_ms: { type: "number", description: "Auto-cancel timeout in ms" },
-              block: { type: "boolean", description: "Block until done (default: true)" },
-            },
-          },
-        },
-        {
-          name: "get_interaction_result",
-          description: "Get the result of a non-blocking interaction",
-          inputSchema: {
-            type: "object",
-            properties: {
-              interaction_id: { type: "string", description: "Interaction ID from show_interaction" },
-              block: { type: "boolean", description: "Wait for result (default: false)" },
-            },
-            required: ["interaction_id"],
-          },
-        },
-        {
-          name: "cancel_interaction",
-          description: "Cancel an active interaction",
-          inputSchema: {
-            type: "object",
-            properties: {
-              interaction_id: { type: "string", description: "Interaction ID to cancel" },
-            },
-            required: ["interaction_id"],
-          },
-        }
+      // Embedded mode: pane tools only (no process management)
+      tools = MCP_TOOLS.filter(t =>
+        ["create_pane", "create_interaction", "remove_pane", "capture_pane", "set_status"].includes(t.name)
       );
-    } else {
-      // Minimal mode: just test_blocking
-      tools.push({
-        name: "test_blocking",
-        description: "Test tool that blocks for a specified duration while sending progress heartbeats. Used to validate timeout handling.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            duration_seconds: { type: "number", description: "How long to block in seconds" },
-            heartbeat_interval_ms: { type: "number", description: "Progress heartbeat interval in ms (default: 25000)" },
-          },
-          required: ["duration_seconds"],
-        },
-      });
     }
+    // Minimal mode: no tools (tmux not available)
 
     return { tools };
   });
@@ -1040,13 +797,13 @@ async function main() {
         };
       }
 
-      // Handle show_interaction (needs server access for progress notifications)
-      if (name === "show_interaction") {
+      // Handle create_interaction (needs server access for progress notifications)
+      if (name === "create_interaction") {
         if (!interactionManager) {
           return formatToolError("Interaction tools not available - tmux required");
         }
 
-        const parsed = ShowInteractionSchema.parse(args);
+        const parsed = CreateInteractionSchema.parse(args);
 
         if (!parsed.schema && !parsed.ink_file) {
           return formatToolError("Either schema or ink_file is required");
@@ -1065,23 +822,13 @@ async function main() {
           await tmuxManager.openTerminal(config?.settings?.terminalApp, configDir);
         }
 
-        // Non-blocking mode
-        if (parsed.block === false) {
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({ interaction_id: interactionId, status: "pending" })
-            }],
-          };
-        }
-
-        // Blocking mode with progress heartbeats
+        // Blocking mode with progress heartbeats (always blocks now)
         const progressToken = request.params._meta?.progressToken;
         const heartbeatIntervalMs = 25000;
         const startTime = Date.now();
         let heartbeatCount = 0;
 
-        console.error(`[mide] show_interaction blocking: id=${interactionId}, progressToken=${progressToken}`);
+        console.error(`[mide] create_interaction: id=${interactionId}, progressToken=${progressToken}`);
 
         while (true) {
           // Wait for result with short timeout
@@ -1140,60 +887,6 @@ async function main() {
             }
           }
         }
-      }
-
-      // Handle get_interaction_result
-      if (name === "get_interaction_result") {
-        if (!interactionManager) {
-          return formatToolError("Interaction tools not available - tmux required");
-        }
-
-        const parsed = GetInteractionResultSchema.parse(args);
-        const state = interactionManager.getState(parsed.interaction_id);
-
-        if (!state) {
-          return formatToolError(`Interaction "${parsed.interaction_id}" not found`);
-        }
-
-        // If blocking requested and still pending, wait
-        if (parsed.block && state.status === "pending") {
-          const result = await interactionManager.waitForResult(parsed.interaction_id, 30000);
-          if (result) {
-            return {
-              content: [{
-                type: "text",
-                text: JSON.stringify({ status: "completed", result })
-              }],
-            };
-          }
-        }
-
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              status: state.status,
-              result: state.result
-            })
-          }],
-        };
-      }
-
-      // Handle cancel_interaction
-      if (name === "cancel_interaction") {
-        if (!interactionManager) {
-          return formatToolError("Interaction tools not available - tmux required");
-        }
-
-        const parsed = CancelInteractionSchema.parse(args);
-        const success = await interactionManager.cancel(parsed.interaction_id);
-
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({ success })
-          }],
-        };
       }
 
       return await handleToolCall(name, args as Record<string, unknown>);

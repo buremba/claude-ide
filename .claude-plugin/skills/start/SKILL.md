@@ -8,43 +8,63 @@ allowed-tools: mcp__plugin_ide_ide__*
 
 Start and manage your development environment with terminals, processes, interactive Ink components, and dashboards.
 
+## Tools (8 total)
+
+### Process Management (require mide.yaml)
+
+| Tool | Description |
+|------|-------------|
+| `list_processes` | List all processes with status, port, URL, health |
+| `manage_process(name, op)` | Start, stop, or restart a process |
+| `get_logs(name, tail?)` | Get process logs |
+
+### Pane Management
+
+| Tool | Description |
+|------|-------------|
+| `create_pane(name, command)` | Create a terminal pane |
+| `create_interaction(schema?, ink_file?)` | Show interactive Ink form/component |
+| `remove_pane(name)` | Remove a pane |
+| `capture_pane(name, lines?)` | Capture terminal output |
+
+### Status
+
+| Tool | Description |
+|------|-------------|
+| `set_status(status, message?)` | Update window title/status |
+
 ## Starting the Environment
 
-When the user wants to start their dev environment, use `list_processes` to initialize and show all processes from `mide.yaml`. This will:
-1. Create the tmux session
-2. Start all auto-start processes
-3. Open the terminal window (if configured)
-
 ```
-list_processes()  // Initializes environment and shows status
+list_processes()  // Initializes tmux session, shows all processes
 ```
 
-## Terminal & Pane Tools
+## Managing Processes
 
-### `create_pane`
-Create a terminal pane running any command. Use for dev servers, build commands, or any shell process.
+```
+manage_process(name: "api", op: "start")
+manage_process(name: "api", op: "stop")
+manage_process(name: "api", op: "restart")
+```
+
+## Creating Terminal Panes
+
 ```
 create_pane(name: "dev-server", command: "npm run dev")
-create_pane(name: "tests", command: "npm test --watch", group: "tools")
+create_pane(name: "tests", command: "npm test --watch")
 ```
-
-### `remove_pane`
-Remove a terminal pane by name.
 
 ## Interactive Ink Components
 
-### `show_interaction`
-Show interactive Ink components for user input, TUI dashboards, or any terminal UI.
-
-**Schema mode** - Define forms inline (no file needed):
+**Schema mode** - Define forms inline:
 ```
-show_interaction(
+create_interaction(
   schema: {
     questions: [
       { question: "What's your name?", header: "Name", inputType: "text" },
       { question: "Select role", header: "Role", options: [
-        { label: "Developer", description: "Write code" },
-        { label: "Designer", description: "Create designs" }
+        { label: "Developer" },
+        { label: "Designer" }
       ]}
     ]
   },
@@ -52,103 +72,56 @@ show_interaction(
 )
 ```
 
-**File mode** - Run custom Ink components (.tsx/.jsx files):
+**File mode** - Run custom Ink components:
 ```
-show_interaction(ink_file: "color-picker.tsx", title: "Pick a Color")
-show_interaction(ink_file: "dashboard.tsx")
+create_interaction(ink_file: "color-picker.tsx", title: "Pick a Color")
 ```
 
-File resolution order:
-1. Absolute paths used as-is
-2. Project `.mide/interactive/` directory
-3. Global `~/.mide/interactive/` directory
+File resolution: `.mide/interactive/` → `~/.mide/interactive/`
 
-### `get_interaction_result`
-Get result from a non-blocking interaction (when `block: false`).
+## Writing Ink Components
 
-### `cancel_interaction`
-Cancel a pending interaction.
-
-## Writing Custom Ink Components
-
-Create `.tsx` files in `.mide/interactive/` (project) or `~/.mide/interactive/` (global):
+Create `.tsx` files in `.mide/interactive/`:
 
 ```tsx
 import { Box, Text, useInput, useApp } from 'ink';
 import { useState } from 'react';
 
-// onComplete is injected globally - call it to return data
 declare const onComplete: (result: unknown) => void;
 
 function MyComponent() {
   const { exit } = useApp();
-  const [value, setValue] = useState('');
 
   useInput((input, key) => {
     if (key.return) {
-      onComplete({ selected: value });  // Return data to Claude
-      exit();                            // Close the component
-    }
-    if (key.escape) {
-      onComplete({ cancelled: true });
+      onComplete({ value: "done" });
       exit();
     }
   });
 
-  return (
-    <Box flexDirection="column">
-      <Text bold>My Interactive Component</Text>
-      <Text>Press Enter to confirm, Escape to cancel</Text>
-    </Box>
-  );
+  return <Text>Press Enter to confirm</Text>;
 }
 
-export default MyComponent;  // Must have default export
+export default MyComponent;
 ```
 
-**Available imports:**
-- `ink` - Box, Text, useInput, useApp, useFocus, Newline, Spacer, Static, Transform
-- `ink-text-input` - TextInput component
-- `ink-select-input` - SelectInput component
-- `react` - useState, useEffect, useMemo, useCallback, etc.
+**Available imports:** `ink`, `ink-text-input`, `ink-select-input`, `react`
 
-**Key patterns:**
-- `useInput((input, key) => {...})` - Handle keyboard input
-- `useApp().exit()` - Close the component
-- `onComplete(data)` - Return result to Claude (global function)
-- `useState` - Manage component state
+## Capturing Terminal Output
 
-### `set_status`
-Update the terminal window title/status indicator.
-
-## Process Management (requires `mide.yaml`)
-
-- `list_processes` - Overview of all processes (also initializes environment)
-- `get_status` - Detailed status of a single process
-- `get_logs` - Get stdout/stderr logs
-- `get_url` - Get the preview URL for a process
-- `start_process` - Start a stopped process
-- `stop_process` - Stop a running process
-- `restart_process` - Restart a process
+```
+capture_pane(name: "dev-server", lines: 50)
+// Returns last 50 lines of terminal output
+```
 
 ## When to Use
 
 | User Intent | Tool |
 |-------------|------|
 | "start dev environment" | `list_processes` |
-| "run a command in terminal" | `create_pane` |
-| "ask user a question" | `show_interaction` with schema |
-| "show a color picker" | `show_interaction` with ink_file |
-| "create an ink component" | Write .tsx file, then `show_interaction` |
-| "check if server is running" | `get_status` |
+| "run a command" | `create_pane` |
+| "ask user a question" | `create_interaction` with schema |
+| "show a picker" | `create_interaction` with ink_file |
+| "what's in the terminal" | `capture_pane` |
+| "restart the API" | `manage_process(op: "restart")` |
 | "show me the logs" | `get_logs` |
-| "restart the API" | `restart_process` |
-
-## Best Practices
-
-1. Use `list_processes` first to initialize the environment
-2. Use `show_interaction` for structured user input instead of asking in chat
-3. For simple questions, use schema mode (no file needed)
-4. For complex UIs, create Ink components in `.mide/interactive/`
-5. Use `create_pane` for long-running processes you want visible
-6. Check process status before suggesting restarts
