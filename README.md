@@ -1,6 +1,6 @@
 # mcp-ide
 
-Interactive Development Environment for Claude Code. Create terminal/process panes, show interactive forms & questions, manage dev servers, build TUI dashboards.
+Interactive Development Environment for Claude Code. Create terminal/process panes, show interactive Ink components & forms, manage dev servers, build TUI dashboards.
 
 ## Installation
 
@@ -41,18 +41,13 @@ processes:
 }
 ```
 
-3. Use the tools in Claude Code:
+3. Use `/ide:start` or ask Claude to manage your dev environment:
 
 ```
-> list_processes
-api: ready | port=3000
-frontend: ready | port=5173
-
-> get_logs api --tail 20
-[last 20 lines of api logs]
-
-> restart_process api
-Process "api" restarted
+> /ide:start
+> "start my dev servers"
+> "show me the API logs"
+> "restart the frontend"
 ```
 
 ## MCP Tools
@@ -68,35 +63,100 @@ Process "api" restarted
 | `get_status(name)` | Get detailed status |
 | `get_logs(name, tail?)` | Get process logs |
 | `get_url(name)` | Get process URL |
-| `create_pane(name, command, group?)` | Create a terminal/process pane for dev servers, commands |
-| `remove_pane(name)` | Remove a terminal/process pane |
 
-### Interactive Forms
+### Terminal Panes
 
 | Tool | Description |
 |------|-------------|
-| `show_interaction(ink_file, title?, block?)` | Show an interactive Ink component |
-| `get_interaction_result(id, block?)` | Get result from a non-blocking interaction |
+| `create_pane(name, command, group?)` | Create a terminal pane |
+| `remove_pane(name)` | Remove a terminal pane |
+| `set_status(message)` | Update window title/status |
+
+### Interactive Ink Components
+
+| Tool | Description |
+|------|-------------|
+| `show_interaction(schema?, ink_file?, title?, block?)` | Show interactive form or Ink component |
+| `get_interaction_result(id, block?)` | Get result from non-blocking interaction |
 | `cancel_interaction(id)` | Cancel an active interaction |
 
-**Example usage:**
-
+**Schema mode** - Define forms inline:
 ```typescript
-// Create a custom Ink component in .mide/interactive/picker.tsx
 show_interaction({
-  ink_file: "picker.tsx",  // Relative to .mide/interactive/
-  title: "Select an option",
-  block: true  // Wait for user response
+  schema: {
+    questions: [
+      { question: "What's your name?", header: "Name", inputType: "text" },
+      { question: "Select role", header: "Role", options: [
+        { label: "Developer" },
+        { label: "Designer" }
+      ]}
+    ]
+  },
+  title: "User Setup"
 })
-// Returns: { action: "accept", result: { selected: "Option A" } }
 ```
 
-Custom Ink components should:
-- Export a default React component
-- Call `onComplete(result)` when done
-- Use `useApp().exit()` to close
+**File mode** - Run custom Ink components:
+```typescript
+show_interaction({
+  ink_file: "color-picker.tsx",  // Relative to .mide/interactive/
+  title: "Pick a Color",
+  block: true
+})
+// Returns: { action: "accept", result: { color: "blue" } }
+```
 
-See `.mide/interactive/demo.tsx` for an example.
+## Writing Ink Components
+
+Create `.tsx` files in `.mide/interactive/` (project) or `~/.mide/interactive/` (global):
+
+```tsx
+import { Box, Text, useInput, useApp } from 'ink';
+import { useState } from 'react';
+
+declare const onComplete: (result: unknown) => void;
+
+function ColorPicker() {
+  const { exit } = useApp();
+  const [selected, setSelected] = useState(0);
+  const colors = ['red', 'green', 'blue'];
+
+  useInput((input, key) => {
+    if (key.upArrow) setSelected(s => (s - 1 + colors.length) % colors.length);
+    if (key.downArrow) setSelected(s => (s + 1) % colors.length);
+    if (key.return) {
+      onComplete({ color: colors[selected] });
+      exit();
+    }
+    if (key.escape) {
+      onComplete({ cancelled: true });
+      exit();
+    }
+  });
+
+  return (
+    <Box flexDirection="column">
+      <Text bold>Pick a color:</Text>
+      {colors.map((color, i) => (
+        <Text key={color} color={i === selected ? 'cyan' : 'white'}>
+          {i === selected ? '> ' : '  '}{color}
+        </Text>
+      ))}
+    </Box>
+  );
+}
+
+export default ColorPicker;
+```
+
+**Available imports:** `ink`, `ink-text-input`, `ink-select-input`, `react`
+
+**Key patterns:**
+- `onComplete(data)` - Return result to Claude (global function)
+- `useApp().exit()` - Close the component
+- `useInput((input, key) => {...})` - Handle keyboard
+
+See `.mide/interactive/color-picker.tsx` for a complete example.
 
 ## Configuration
 
@@ -105,106 +165,42 @@ See `.mide/interactive/demo.tsx` for an example.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `command` | string | required | Shell command to run |
-| `cwd` | string | config dir | Working directory (relative to config) |
-| `port` | number | auto-detect | Fixed port (injected as `$PORT` env var) |
-| `force` | boolean | false | Kill existing process on port |
-| `autoStart` | boolean | true | Start automatically on boot |
+| `cwd` | string | config dir | Working directory |
+| `port` | number | auto-detect | Fixed port (injected as `$PORT`) |
+| `autoStart` | boolean | true | Start automatically |
 | `env` | object | {} | Environment variables |
 | `envFile` | string | none | Path to .env file |
 | `restartPolicy` | string | "onFailure" | `always`, `onFailure`, or `never` |
 | `maxRestarts` | number | 5 | Max restart attempts |
 | `healthCheck` | string | none | HTTP path for health checks |
 | `dependsOn` | string/array | none | Process dependencies |
-| `stdoutPatternVars` | object | none | Regex patterns to extract variables from output |
-| `readyVars` | array | none | Variables required before process is "ready" |
 
 ### Settings
 
 ```yaml
 settings:
-  # Process management
   logBufferSize: 1000        # Log lines to keep per process
   healthCheckInterval: 10000  # Health check interval (ms)
-  dependencyTimeout: 60000    # Dependency wait timeout (ms)
-  restartBackoffMax: 30000    # Max restart backoff (ms)
-  processStopTimeout: 5000    # Graceful stop timeout (ms)
-
-  # Tmux settings
-  tmuxSessionPrefix: mide      # Prefix for tmux session names
-  layout: grid                # Default pane layout
-
-  # Terminal settings
   autoAttachTerminal: true    # Auto-open terminal on start
-  terminalApp: auto           # auto, tmux, ghostty, iterm, kitty, terminal
+  terminalApp: auto           # auto, ghostty, iterm, kitty, terminal
+  layout: grid                # grid, horizontal, vertical, main-left, main-top
 ```
-
-**Terminal app options:**
-- `auto` (default) - If inside tmux, creates a new window; otherwise detects and opens external terminal
-- `tmux` - Always create a tmux window (only works when running inside tmux)
-- `ghostty`, `iterm`, `kitty`, `terminal` - Open specific external terminal app
 
 ### Layout
 
-Control how processes are arranged in the tmux session.
-
-**Simple presets** (top-level shortcut):
-
 ```yaml
+# Simple presets
 layout: grid        # Automatic grid (default)
-layout: horizontal  # All processes side by side
-layout: vertical    # All processes stacked
-layout: main-left   # First process large on left, others stacked right
-layout: main-top    # First process large on top, others below
-```
+layout: horizontal  # Side by side
+layout: vertical    # Stacked
 
-**Grouped layouts** with named groups:
-
-```yaml
-# 2x2 grid with named groups
+# Grouped layouts
 layout:
   type: rows
   groups:
-    servers: [frontend, backend]   # top row
-    tools: [worker, api]           # bottom row
-
-# Or arrange as columns
-layout:
-  type: columns
-  groups:
-    left: [frontend, worker]       # left column
-    right: [backend, api]          # right column
+    servers: [frontend, backend]
+    tools: [worker, api]
 ```
-
-Named groups enable dynamic panes - use `create_pane(name, command, group)` to add terminal/process panes to specific groups at runtime.
-
-### Port Detection
-
-Ports are automatically detected from process output. Common patterns:
-- `Local: http://localhost:5173`
-- `Server listening on port 3000`
-- `http://localhost:PORT`
-
-### Variable Extraction
-
-Extract values from process output using regex patterns:
-
-```yaml
-processes:
-  vite:
-    command: npm run dev
-    stdoutPatternVars:
-      url: "Local:\\s+(http://[^\\s]+)"
-      network: "Network:\\s+(http://[^\\s]+)"
-    readyVars: [url]  # Process is "ready" when these vars are captured
-```
-
-Captured variables are available via `get_status(name)`.
-
-### Restart Policies
-
-- **`always`**: Restart on any exit (daemon-style)
-- **`onFailure`**: Restart only on non-zero exit (default)
-- **`never`**: Run once, don't restart (for build steps)
 
 ### Dependencies
 
