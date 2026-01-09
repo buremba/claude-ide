@@ -49,6 +49,8 @@ mcp-ide logs <name>           # Capture pane/service output
 mcp-ide pane <name> <cmd>     # Create terminal pane
 mcp-ide rm <name>             # Remove a pane
 mcp-ide status <status>       # Set window status
+mcp-ide ask <question>        # Ask user a question
+mcp-ide ink <file.tsx>        # Run custom Ink component
 mcp-ide attach [session]      # Attach to tmux session
 mcp-ide sessions              # List active sessions
 ```
@@ -61,8 +63,8 @@ mcp-ide sessions              # List active sessions
 | Start/stop services | `mcp-ide start api` | `manage_service` |
 | View logs | `mcp-ide logs api` | `capture_pane` |
 | Run one-off command | `mcp-ide pane build "npm run build"` | `create_pane` |
-| Ask user a question | - | `show_user_interaction` |
-| Custom Ink component | - | `show_user_interaction` |
+| Ask user a question | `mcp-ide ask "Deploy?"` | `show_user_interaction` |
+| Custom Ink component | `mcp-ide ink picker.tsx` | `show_user_interaction` |
 
 ## Service Configuration
 

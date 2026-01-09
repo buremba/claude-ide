@@ -18,6 +18,8 @@ mcp-ide restart <service>     # Restart a service
 mcp-ide logs <name>           # Get terminal output
 mcp-ide pane <name> <cmd>     # Create terminal pane
 mcp-ide rm <name>             # Remove a pane
+mcp-ide ask <question>        # Ask user a question
+mcp-ide ink <file.tsx>        # Run custom Ink component
 mcp-ide attach [session]      # Attach to tmux session
 ```
 
@@ -30,15 +32,17 @@ mcp-ide attach [session]      # Attach to tmux session
 | "show logs" | `mcp-ide logs <name>` |
 | "restart the API" | `mcp-ide restart api` |
 | "run a command in background" | `mcp-ide pane <name> <cmd>` |
-| "ask user a question" | Use `show_user_interaction` MCP tool |
+| "ask user a question" | `mcp-ide ask "question?"` |
+| "show a picker/form" | `mcp-ide ink picker.tsx` |
 
-## MCP Tools (When CLI Won't Work)
+## MCP Tools (Alternative)
 
-Use MCP tools only for interactive features:
+MCP equivalents (use CLI when possible):
 
-- `show_user_interaction` - Show forms or custom Ink components to user
-- `get_user_interaction` - Get result from completed interaction
-- `set_status` - Update window title/status indicator
+- `list_services`, `manage_service`, `capture_pane`, `create_pane`, `remove_pane`
+- `show_user_interaction` - Forms/Ink components (CLI: `ask`, `ink`)
+- `get_user_interaction` - Get async interaction result
+- `set_status` - Update window title
 
 ## Examples
 

@@ -68,6 +68,28 @@ const CLI_COMMANDS: Record<string, {
     usage: "mcp-ide status <status> [message]",
     parseArgs: (args) => ({ status: args[1] || "running", message: args[2] }),
   },
+  ask: {
+    tool: "show_user_interaction",
+    usage: "mcp-ide ask <question> [--header Header]",
+    parseArgs: (args) => {
+      if (!args[1]) return null;
+      const headerIdx = args.indexOf("--header");
+      const header = headerIdx !== -1 && args[headerIdx + 1] ? args[headerIdx + 1] : "Answer";
+      const question = args.slice(1).filter((_, i) => {
+        const argI = i + 1;
+        return argI !== headerIdx && argI !== headerIdx + 1;
+      }).join(" ");
+      return {
+        schema: { questions: [{ question, header, inputType: "text" }] },
+        timeout_ms: 300000, // 5 min timeout for CLI
+      };
+    },
+  },
+  ink: {
+    tool: "show_user_interaction",
+    usage: "mcp-ide ink <file.tsx>",
+    parseArgs: (args) => args[1] ? { ink_file: args[1], timeout_ms: 300000 } : null,
+  },
 };
 
 interface ParsedArgs {
@@ -326,6 +348,60 @@ async function executeCLITool(
       const { status, message } = args as { status: string; message?: string };
       await tmuxManager.setStatus(status as "pending" | "running" | "completed" | "failed", message);
       return `Status: ${status}${message ? ` - ${message}` : ""}`;
+    }
+
+    case "show_user_interaction": {
+      // Run ink-runner directly in terminal for CLI mode
+      const { spawn } = await import("child_process");
+      const { schema, ink_file } = args as { schema?: { questions: Array<{ question: string; header: string; inputType?: string }> }; ink_file?: string };
+
+      // Find ink-runner
+      const __filename = (await import("url")).fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const inkRunnerPath = path.join(__dirname, "ink-runner");
+
+      // Build command args
+      const cmdArgs: string[] = [];
+      if (schema) {
+        cmdArgs.push("--schema", JSON.stringify(schema));
+      }
+      if (ink_file) {
+        // Resolve ink file path
+        const cwd = process.cwd();
+        const projectPath = path.join(cwd, ".mide/interactive", ink_file);
+        const globalPath = path.join(process.env.HOME || "", ".mide/interactive", ink_file);
+        const resolvedPath = existsSync(projectPath) ? projectPath : existsSync(globalPath) ? globalPath : ink_file;
+        cmdArgs.push("--ink-file", resolvedPath);
+      }
+
+      return new Promise((resolve) => {
+        const child = spawn("node", [path.join(inkRunnerPath, "dist/index.js"), ...cmdArgs], {
+          stdio: ["inherit", "pipe", "inherit"],
+          cwd: process.cwd(),
+        });
+
+        let output = "";
+        child.stdout?.on("data", (data) => {
+          const text = data.toString();
+          // Check for result prefix
+          if (text.includes("__MCP_RESULT__:")) {
+            const match = text.match(/__MCP_RESULT__:(.+)/);
+            if (match) {
+              try {
+                output = JSON.stringify(JSON.parse(match[1]), null, 2);
+              } catch {
+                output = match[1];
+              }
+            }
+          } else {
+            process.stdout.write(text);
+          }
+        });
+
+        child.on("close", () => {
+          resolve(output || "(no result)");
+        });
+      });
     }
 
     default:
