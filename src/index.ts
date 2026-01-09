@@ -632,9 +632,17 @@ async function main() {
         process.exit(1);
       }
 
+      // Tools that don't require mide.yaml or active session
+      const standaloneTools = ["show_user_interaction"];
+      const isStandalone = standaloneTools.includes(parsedArgs.toolName);
+
+      // Tools that require mide.yaml and services
+      const serviceTools = ["list_services", "manage_service"];
+      const needsServices = serviceTools.includes(parsedArgs.toolName);
+
       // Initialize managers for CLI mode
       const hasConfig = configExists();
-      if (!hasConfig && ["list_services", "manage_service"].includes(parsedArgs.toolName)) {
+      if (!hasConfig && needsServices) {
         console.error("No mide.yaml found - service management not available");
         process.exit(1);
       }
@@ -642,7 +650,7 @@ async function main() {
       let cliProcessManager: ProcessManager | undefined;
       let cliTmuxManager: TmuxManager | undefined;
 
-      if (hasConfig) {
+      if (hasConfig && !isStandalone) {
         const loaded = await loadConfig();
         const projectName = path.basename(loaded.configDir);
         const layout = loaded.config.layout ?? loaded.config.settings?.layout;
