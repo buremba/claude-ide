@@ -19,8 +19,8 @@ Thumbs.db
 *.swo
 *~
 
-# MCP sidecar runtime data
-.mcp-sidecar-browser/
+# MIDE runtime data
+.mide-browser/
 
 # VS Code server data (runtime)
 .vscode-server/data/logs/

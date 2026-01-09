@@ -1,5 +1,5 @@
 ---
-allowed-tools: mcp__sidecar__get_logs, mcp__sidecar__list_processes
+allowed-tools: mcp__ide__get_logs, mcp__ide__list_processes
 ---
 
 Get logs for process: $ARGUMENTS

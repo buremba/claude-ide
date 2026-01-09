@@ -11,7 +11,7 @@ import { z } from "zod";
 import * as path from "path";
 import { loadConfig, configExists } from "./config.js";
 import { ProcessManager } from "./process-manager.js";
-import { TmuxManager, EmbeddedTmuxManager, isTmuxAvailable, listSidecarSessions, isInsideTmux } from "./tmux-manager.js";
+import { TmuxManager, EmbeddedTmuxManager, isTmuxAvailable, listIdeSessions, isInsideTmux } from "./tmux-manager.js";
 import { InteractionManager } from "./interaction-manager.js";
 
 type Command = "server" | "sessions" | "attach" | "help";
@@ -77,33 +77,33 @@ function parseArgs(): ParsedArgs {
         return { command: "server", config };
       }
       console.error(`Unknown command: ${firstArg}`);
-      console.error("Run 'mcp-sidecar help' for usage");
+      console.error("Run 'mcp-ide help' for usage");
       process.exit(1);
   }
 }
 
 function showHelp(): void {
   console.log(`
-mcp-sidecar - MCP server for managing development processes
+mcp-ide - MCP server for managing development processes
 
 Usage:
-  mcp-sidecar [options]           Start MCP server (default)
-  mcp-sidecar sessions            List active sidecar tmux sessions
-  mcp-sidecar attach [name]       Attach to a tmux session
+  mcp-ide [options]           Start MCP server (default)
+  mcp-ide sessions            List active IDE tmux sessions
+  mcp-ide attach [name]       Attach to a tmux session
 
 Options:
   -h, --help              Show this help message
-  -c, --config <path>     Path to sidecar.yaml config file
+  -c, --config <path>     Path to mide.yaml config file
 
 Configuration:
-  Create a sidecar.yaml file in your project root to define processes.
+  Create an mide.yaml file in your project root to define processes.
   Or specify a custom path with --config.
 
 tmux Integration:
   Processes run in tmux panes for live output viewing.
-  Use 'mcp-sidecar attach' to see process output in your terminal.
+  Use 'mcp-ide attach' to see process output in your terminal.
 
-Example sidecar.yaml:
+Example mide.yaml:
   processes:
     api:
       command: npm run dev
@@ -116,19 +116,19 @@ Example sidecar.yaml:
 }
 
 /**
- * List all active sidecar sessions
+ * List all active IDE sessions
  */
 async function commandSessions(): Promise<void> {
-  const sessions = await listSidecarSessions();
+  const sessions = await listIdeSessions();
 
   if (sessions.length === 0) {
-    console.log("No active sidecar sessions found.");
-    console.log("\nStart a session by running 'mcp-sidecar' in a project directory with sidecar.yaml");
+    console.log("No active IDE sessions found.");
+    console.log("\nStart a session by running 'mcp-ide' in a project directory with mide.yaml");
     return;
   }
 
-  console.log("SIDECAR SESSIONS");
-  console.log("================");
+  console.log("IDE SESSIONS");
+  console.log("============");
   console.log("");
 
   for (const session of sessions) {
@@ -137,17 +137,17 @@ async function commandSessions(): Promise<void> {
   }
 
   console.log("");
-  console.log("Use: mcp-sidecar attach <name>");
+  console.log("Use: mcp-ide attach <name>");
 }
 
 /**
  * Attach to a tmux session
  */
 async function commandAttach(sessionName?: string): Promise<void> {
-  const sessions = await listSidecarSessions();
+  const sessions = await listIdeSessions();
 
   if (sessions.length === 0) {
-    console.error("No active sidecar sessions found.");
+    console.error("No active IDE sessions found.");
     process.exit(1);
   }
 
@@ -168,7 +168,7 @@ async function commandAttach(sessionName?: string): Promise<void> {
   } else {
     // Auto-detect: try to find session for current directory
     const projectName = path.basename(process.cwd());
-    const expectedName = `sidecar-${projectName.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}`;
+    const expectedName = `mide-${projectName.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}`;
 
     const match = sessions.find((s) => s.name === expectedName || s.name.startsWith(expectedName));
 
@@ -179,7 +179,7 @@ async function commandAttach(sessionName?: string): Promise<void> {
       targetSession = sessions[0].name;
     } else {
       console.error("Multiple sessions available. Please specify which one:");
-      sessions.forEach((s) => console.error(`  mcp-sidecar attach ${s.name}`));
+      sessions.forEach((s) => console.error(`  mcp-ide attach ${s.name}`));
       process.exit(1);
     }
   }
@@ -187,7 +187,7 @@ async function commandAttach(sessionName?: string): Promise<void> {
   console.log(`Attaching to ${targetSession}...`);
 
   // Create a temporary TmuxManager just to attach
-  const tmux = new TmuxManager(targetSession.replace(/^sidecar-/, ""));
+  const tmux = new TmuxManager(targetSession.replace(/^mide-/, ""));
   (tmux as { sessionName: string }).sessionName = targetSession;
   tmux.attach();
 }
@@ -205,7 +205,7 @@ function formatAge(date: Date): string {
 
 // Process tool schemas
 const StartProcessSchema = z.object({
-  name: z.string().describe("Process name from sidecar.yaml"),
+  name: z.string().describe("Process name from mide.yaml"),
   args: z.string().optional().describe("Additional arguments to pass to the command"),
   force: z.boolean().optional().describe("Kill any process using the port before starting"),
 });
@@ -233,15 +233,15 @@ const GetUrlSchema = z.object({
 });
 
 // Dynamic terminal schemas
-const CreateTerminalSchema = z.object({
-  name: z.string().describe("Unique name for the terminal"),
-  command: z.string().describe("Command to run in the terminal"),
-  group: z.string().optional().describe("Group to place the terminal in (default: 'dynamic')"),
-  mode: z.enum(["embedded", "standalone"]).optional().describe("Tmux mode: embedded (current session) or standalone (separate sidecar session)"),
+const CreatePaneSchema = z.object({
+  name: z.string().describe("Unique name for the pane"),
+  command: z.string().describe("Command to run in the pane"),
+  group: z.string().optional().describe("Group to place the pane in (default: 'dynamic')"),
+  mode: z.enum(["embedded", "standalone"]).optional().describe("Tmux mode: embedded (current session) or standalone (separate IDE session)"),
 });
 
-const RemoveTerminalSchema = z.object({
-  name: z.string().describe("Name of the terminal to remove"),
+const RemovePaneSchema = z.object({
+  name: z.string().describe("Name of the pane to remove"),
 });
 
 // Test blocking tool schema (for validating progress heartbeats)
@@ -286,7 +286,7 @@ const CancelInteractionSchema = z.object({
   interaction_id: z.string().describe("Interaction ID to cancel"),
 });
 
-const SetSidecarStatusSchema = z.object({
+const SetStatusSchema = z.object({
   status: z.enum(["pending", "running", "completed", "failed"]),
   message: z.string().optional(),
 });
@@ -295,7 +295,7 @@ const SetSidecarStatusSchema = z.object({
 const PROCESS_TOOLS: Tool[] = [
   {
     name: "list_processes",
-    description: "List all processes defined in sidecar.yaml with their status",
+    description: "List all processes defined in mide.yaml with their status",
     inputSchema: {
       type: "object",
       properties: {},
@@ -304,11 +304,11 @@ const PROCESS_TOOLS: Tool[] = [
   },
   {
     name: "start_process",
-    description: "Start a process defined in sidecar.yaml",
+    description: "Start a process defined in mide.yaml",
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Process name from sidecar.yaml" },
+        name: { type: "string", description: "Process name from mide.yaml" },
         args: { type: "string", description: "Additional arguments to pass to the command" },
         force: { type: "boolean", description: "Kill any process using the port before starting" },
       },
@@ -373,33 +373,33 @@ const PROCESS_TOOLS: Tool[] = [
     },
   },
   {
-    name: "create_terminal",
-    description: "Create a dynamic terminal pane running a command. In embedded mode (default when inside tmux), creates pane in current session. In standalone mode, creates in separate sidecar session.",
+    name: "create_pane",
+    description: "Create a terminal/process pane running a command. Use for dev servers, build commands, or any shell process. In embedded mode (default when inside tmux), creates pane in current session. In standalone mode, creates in separate IDE session.",
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Unique name for the terminal" },
-        command: { type: "string", description: "Command to run in the terminal" },
-        group: { type: "string", description: "Group to place the terminal in (default: 'dynamic', standalone mode only)" },
-        mode: { type: "string", enum: ["embedded", "standalone"], description: "Tmux mode: embedded (current session) or standalone (separate sidecar session)" },
+        name: { type: "string", description: "Unique name for the pane" },
+        command: { type: "string", description: "Command to run (e.g., 'npm run dev', 'python server.py')" },
+        group: { type: "string", description: "Group to place the pane in (default: 'dynamic', standalone mode only)" },
+        mode: { type: "string", enum: ["embedded", "standalone"], description: "Tmux mode: embedded (current session) or standalone (separate IDE session)" },
       },
       required: ["name", "command"],
     },
   },
   {
-    name: "remove_terminal",
-    description: "Remove a dynamic terminal by name",
+    name: "remove_pane",
+    description: "Remove a terminal/process pane by name",
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Name of the terminal to remove" },
+        name: { type: "string", description: "Name of the pane to remove" },
       },
       required: ["name"],
     },
   },
   {
-    name: "set_sidecar_status",
-    description: "Update the sidecar terminal window title to show current status",
+    name: "set_status",
+    description: "Update the IDE terminal window title to show current status",
     inputSchema: {
       type: "object",
       properties: {
@@ -527,16 +527,16 @@ async function main() {
 
   // Check if tmux is available (required)
   if (!(await isTmuxAvailable())) {
-    console.error("[sidecar] Error: tmux is required but not found.");
-    console.error("[sidecar] Install tmux: brew install tmux (macOS) or apt install tmux (Linux)");
+    console.error("[mide] Error: tmux is required but not found.");
+    console.error("[mide] Install tmux: brew install tmux (macOS) or apt install tmux (Linux)");
     process.exit(1);
   }
 
   // Check if config exists (either specified or in cwd)
   const hasConfig = parsedArgs.config || configExists();
   if (!hasConfig) {
-    console.error("[sidecar] No sidecar.yaml found in current directory");
-    console.error("[sidecar] Running in minimal mode - no process management available");
+    console.error("[mide] No mide.yaml found in current directory");
+    console.error("[mide] Running in minimal mode - no process management available");
   }
 
   // Load config if it exists
@@ -551,16 +551,16 @@ async function main() {
   if (isInsideTmux()) {
     try {
       embeddedTmuxManager = await EmbeddedTmuxManager.create();
-      console.error(`[sidecar] Running in embedded mode (session: ${embeddedTmuxManager.getSessionName()})`);
+      console.error(`[mide] Running in embedded mode (session: ${embeddedTmuxManager.getSessionName()})`);
 
-      // Initialize interaction manager for embedded mode (works without sidecar.yaml)
-      // Uses ~/.sidecar/interactive/ for global components
+      // Initialize interaction manager for embedded mode (works without mide.yaml)
+      // Uses ~/.mide/interactive/ for global components
       interactionManager = new InteractionManager({
         tmuxManager: embeddedTmuxManager as unknown as TmuxManager,
         cwd: workspaceDir,
       });
     } catch (err) {
-      console.error(`[sidecar] Failed to create embedded tmux manager: ${err}`);
+      console.error(`[mide] Failed to create embedded tmux manager: ${err}`);
     }
   }
 
@@ -579,7 +579,7 @@ async function main() {
     });
     await tmuxManager.createSession();
 
-    console.error(`[sidecar] Created tmux session: ${tmuxManager.sessionName}`);
+    console.error(`[mide] Created tmux session: ${tmuxManager.sessionName}`);
 
     // Initialize process manager with tmux
     processManager = new ProcessManager(configDir, {
@@ -592,7 +592,7 @@ async function main() {
     // Let InteractionManager find ink-runner relative to its own location
     interactionManager = new InteractionManager({
       tmuxManager,
-      cwd: configDir,  // Project root for resolving .sidecar/interactive paths
+      cwd: configDir,  // Project root for resolving .mide/interactive paths
     });
 
     // Auto-attach terminal if configured and there are processes to show
@@ -600,7 +600,7 @@ async function main() {
     if (config.settings?.autoAttachTerminal && hasProcesses) {
       await tmuxManager.openTerminal(config.settings?.terminalApp, configDir);
     } else if (hasProcesses) {
-      console.error(`[sidecar] Attach with: tmux attach -t ${tmuxManager.sessionName}`);
+      console.error(`[mide] Attach with: tmux attach -t ${tmuxManager.sessionName}`);
     }
   }
 
@@ -609,12 +609,12 @@ async function main() {
     switch (name) {
       case "list_processes": {
         if (!processManager) {
-          return formatToolError("No sidecar.yaml found - process management not available");
+          return formatToolError("No mide.yaml found - process management not available");
         }
         const processes = processManager.listProcesses();
         if (processes.length === 0) {
           return {
-            content: [{ type: "text", text: "No processes defined in sidecar.yaml" }],
+            content: [{ type: "text", text: "No processes defined in mide.yaml" }],
           };
         }
         const formatted = processes.map((p) => {
@@ -631,7 +631,7 @@ async function main() {
 
       case "start_process": {
         if (!processManager) {
-          return formatToolError("No sidecar.yaml found - process management not available");
+          return formatToolError("No mide.yaml found - process management not available");
         }
         const parsed = StartProcessSchema.parse(args);
         await processManager.startProcess(parsed.name, {
@@ -645,7 +645,7 @@ async function main() {
 
       case "stop_process": {
         if (!processManager) {
-          return formatToolError("No sidecar.yaml found - process management not available");
+          return formatToolError("No mide.yaml found - process management not available");
         }
         const parsed = StopProcessSchema.parse(args);
         await processManager.stopProcess(parsed.name);
@@ -656,7 +656,7 @@ async function main() {
 
       case "restart_process": {
         if (!processManager) {
-          return formatToolError("No sidecar.yaml found - process management not available");
+          return formatToolError("No mide.yaml found - process management not available");
         }
         const parsed = RestartProcessSchema.parse(args);
         await processManager.restartProcess(parsed.name);
@@ -667,7 +667,7 @@ async function main() {
 
       case "get_status": {
         if (!processManager) {
-          return formatToolError("No sidecar.yaml found - process management not available");
+          return formatToolError("No mide.yaml found - process management not available");
         }
         const parsed = GetStatusSchema.parse(args);
         const process = processManager.getProcess(parsed.name);
@@ -692,7 +692,7 @@ async function main() {
 
       case "get_logs": {
         if (!processManager) {
-          return formatToolError("No sidecar.yaml found - process management not available");
+          return formatToolError("No mide.yaml found - process management not available");
         }
         const parsed = GetLogsSchema.parse(args);
         const proc = processManager.getProcess(parsed.name);
@@ -711,7 +711,7 @@ async function main() {
 
       case "get_url": {
         if (!processManager) {
-          return formatToolError("No sidecar.yaml found - process management not available");
+          return formatToolError("No mide.yaml found - process management not available");
         }
         const parsed = GetUrlSchema.parse(args);
         const url = processManager.getUrl(parsed.name);
@@ -725,8 +725,8 @@ async function main() {
         };
       }
 
-      case "create_terminal": {
-        const parsed = CreateTerminalSchema.parse(args);
+      case "create_pane": {
+        const parsed = CreatePaneSchema.parse(args);
 
         // Determine effective mode: tool param > config > auto-detect
         const effectiveMode = parsed.mode
@@ -751,12 +751,12 @@ async function main() {
           };
         }
 
-        // Standalone mode: use separate sidecar session (requires config)
+        // Standalone mode: use separate MIDE session (requires config)
         if (!processManager || !tmuxManager) {
           if (effectiveMode === "embedded" && !embeddedTmuxManager) {
             return formatToolError("Embedded mode requires running inside tmux");
           }
-          return formatToolError("Standalone mode requires sidecar.yaml");
+          return formatToolError("Standalone mode requires mide.yaml");
         }
 
         const terminal = await processManager.createDynamicTerminal(
@@ -774,7 +774,7 @@ async function main() {
         return {
           content: [{
             type: "text",
-            text: `Created terminal "${terminal.name}" in group "${terminal.group}"\n` +
+            text: `Created pane "${terminal.name}" in group "${terminal.group}"\n` +
               `Command: ${terminal.command}\n` +
               `Pane ID: ${terminal.paneId}\n` +
               (groups.length > 1 ? `Available groups: ${groups.join(", ")}` : "")
@@ -782,8 +782,8 @@ async function main() {
         };
       }
 
-      case "remove_terminal": {
-        const parsed = RemoveTerminalSchema.parse(args);
+      case "remove_pane": {
+        const parsed = RemovePaneSchema.parse(args);
 
         // Try embedded manager first
         if (embeddedTmuxManager?.hasPane(parsed.name)) {
@@ -799,12 +799,12 @@ async function main() {
         }
         await processManager.removeDynamicTerminal(parsed.name);
         return {
-          content: [{ type: "text", text: `Removed terminal "${parsed.name}"` }],
+          content: [{ type: "text", text: `Removed pane "${parsed.name}"` }],
         };
       }
 
-      case "set_sidecar_status": {
-        const parsed = SetSidecarStatusSchema.parse(args);
+      case "set_status": {
+        const parsed = SetStatusSchema.parse(args);
 
         // Use embedded manager if available, otherwise standalone
         if (embeddedTmuxManager) {
@@ -830,7 +830,7 @@ async function main() {
   // Create MCP server
   const server = new Server(
     {
-      name: "mcp-sidecar",
+      name: "mcp-ide",
       version: "0.4.0",
     },
     {
@@ -851,30 +851,30 @@ async function main() {
       // Embedded mode: offer terminal tools without full config
       tools.push(
         {
-          name: "create_terminal",
-          description: "Create a terminal pane in the current tmux session (embedded mode)",
+          name: "create_pane",
+          description: "Create a terminal/process pane in the current tmux session. Use for dev servers, build commands, or any shell process.",
           inputSchema: {
             type: "object",
             properties: {
-              name: { type: "string", description: "Unique name for the terminal" },
-              command: { type: "string", description: "Command to run in the terminal" },
+              name: { type: "string", description: "Unique name for the pane" },
+              command: { type: "string", description: "Command to run (e.g., 'npm run dev', 'python server.py')" },
             },
             required: ["name", "command"],
           },
         },
         {
-          name: "remove_terminal",
-          description: "Remove a terminal pane by name",
+          name: "remove_pane",
+          description: "Remove a terminal/process pane by name",
           inputSchema: {
             type: "object",
             properties: {
-              name: { type: "string", description: "Name of the terminal to remove" },
+              name: { type: "string", description: "Name of the pane to remove" },
             },
             required: ["name"],
           },
         },
         {
-          name: "set_sidecar_status",
+          name: "set_status",
           description: "Update the terminal window title to show current status",
           inputSchema: {
             type: "object",
@@ -931,7 +931,7 @@ async function main() {
                 },
                 required: ["questions"],
               },
-              ink_file: { type: "string", description: "Path to custom Ink component file (.tsx/.jsx) - resolves from ~/.sidecar/interactive/ or .sidecar/interactive/" },
+              ink_file: { type: "string", description: "Path to custom Ink component file (.tsx/.jsx) - resolves from ~/.mide/interactive/ or .mide/interactive/" },
               title: { type: "string", description: "Form title" },
               timeout_ms: { type: "number", description: "Auto-cancel timeout in ms" },
               block: { type: "boolean", description: "Block until done (default: true)" },
@@ -993,7 +993,7 @@ async function main() {
         const heartbeatIntervalMs = parsed.heartbeat_interval_ms ?? 25000;
         const progressToken = request.params._meta?.progressToken;
 
-        console.error(`[sidecar] test_blocking: duration=${durationMs}ms, heartbeat=${heartbeatIntervalMs}ms, progressToken=${progressToken}`);
+        console.error(`[mide] test_blocking: duration=${durationMs}ms, heartbeat=${heartbeatIntervalMs}ms, progressToken=${progressToken}`);
 
         const startTime = Date.now();
         let heartbeatCount = 0;
@@ -1013,7 +1013,7 @@ async function main() {
             const elapsed = Date.now() - startTime;
             const progress = Math.min(elapsed / durationMs, 0.99);
 
-            console.error(`[sidecar] Sending progress heartbeat #${heartbeatCount}: ${(progress * 100).toFixed(1)}%`);
+            console.error(`[mide] Sending progress heartbeat #${heartbeatCount}: ${(progress * 100).toFixed(1)}%`);
 
             try {
               await server.notification({
@@ -1026,7 +1026,7 @@ async function main() {
                 }
               });
             } catch (err) {
-              console.error(`[sidecar] Failed to send progress notification:`, err);
+              console.error(`[mide] Failed to send progress notification:`, err);
             }
           }
         }
@@ -1081,7 +1081,7 @@ async function main() {
         const startTime = Date.now();
         let heartbeatCount = 0;
 
-        console.error(`[sidecar] show_interaction blocking: id=${interactionId}, progressToken=${progressToken}`);
+        console.error(`[mide] show_interaction blocking: id=${interactionId}, progressToken=${progressToken}`);
 
         while (true) {
           // Wait for result with short timeout
@@ -1124,7 +1124,7 @@ async function main() {
           // Send progress heartbeat to keep connection alive
           if (progressToken) {
             heartbeatCount++;
-            console.error(`[sidecar] Sending progress heartbeat #${heartbeatCount} for ${interactionId}`);
+            console.error(`[mide] Sending progress heartbeat #${heartbeatCount} for ${interactionId}`);
 
             try {
               await server.notification({
@@ -1136,7 +1136,7 @@ async function main() {
                 }
               });
             } catch (err) {
-              console.error(`[sidecar] Failed to send progress notification:`, err);
+              console.error(`[mide] Failed to send progress notification:`, err);
             }
           }
         }
@@ -1199,7 +1199,7 @@ async function main() {
       return await handleToolCall(name, args as Record<string, unknown>);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[sidecar] Tool call failed: ${name}:`, msg);
+      console.error(`[mide] Tool call failed: ${name}:`, msg);
       return formatToolError(msg);
     }
   });
@@ -1210,7 +1210,7 @@ async function main() {
     if (isShuttingDown) return;
     isShuttingDown = true;
 
-    console.error("[sidecar] Shutting down...");
+    console.error("[mide] Shutting down...");
 
     try {
       // Stop all pending interactions first
@@ -1228,7 +1228,7 @@ async function main() {
         await processManager.stopAll();
       }
     } catch (err) {
-      console.error("[sidecar] Error during shutdown:", err);
+      console.error("[mide] Error during shutdown:", err);
     }
 
     // Give a moment for cleanup to complete
@@ -1242,9 +1242,9 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  console.error("[sidecar] MCP server running");
+  console.error("[mide] MCP server running");
   if (processManager && tmuxManager) {
-    console.error(`[sidecar] Managing ${processManager.listProcesses().length} processes in tmux session: ${tmuxManager.sessionName}`);
+    console.error(`[mide] Managing ${processManager.listProcesses().length} processes in tmux session: ${tmuxManager.sessionName}`);
   }
 }
 

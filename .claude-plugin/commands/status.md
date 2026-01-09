@@ -1,8 +1,8 @@
 ---
-allowed-tools: mcp__sidecar__list_processes, mcp__sidecar__get_status
+allowed-tools: mcp__ide__list_processes, mcp__ide__get_status
 ---
 
-List all processes and their current status using the sidecar MCP tools.
+List all processes and their current status using the IDE MCP tools.
 
 Show a formatted table with columns: Name, Port, Status, Health.
 

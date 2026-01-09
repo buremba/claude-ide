@@ -29,7 +29,7 @@ function getResultFilePath(interactionId: string): string {
  * Directory name for interactive component files (relative to project root)
  * Files passed to ink_file are resolved relative to this folder
  */
-export const INTERACTIVE_DIR = ".sidecar/interactive";
+export const INTERACTIVE_DIR = ".mide/interactive";
 
 export type InteractionMode = "schema" | "custom";
 export type InteractionStatus = "pending" | "completed" | "cancelled" | "timeout";
@@ -115,8 +115,8 @@ export class InteractionManager extends EventEmitter {
    * Resolve an ink_file path
    * Resolution order:
    * 1. Absolute paths used as-is
-   * 2. Project .sidecar/interactive/ (takes precedence)
-   * 3. Global ~/.sidecar/interactive/
+   * 2. Project .mide/interactive/ (takes precedence)
+   * 3. Global ~/.mide/interactive/
    */
   resolveInkFile(filePath: string): string {
     // Absolute paths used as-is
@@ -124,14 +124,14 @@ export class InteractionManager extends EventEmitter {
       return filePath;
     }
 
-    // Try project-local .sidecar/interactive/ first
+    // Try project-local .mide/interactive/ first
     const projectPath = path.join(this.getInteractiveDir(), filePath);
     if (fs.existsSync(projectPath)) {
       return projectPath;
     }
 
-    // Try global ~/.sidecar/interactive/
-    const globalPath = path.join(os.homedir(), ".sidecar", "interactive", filePath);
+    // Try global ~/.mide/interactive/
+    const globalPath = path.join(os.homedir(), ".mide", "interactive", filePath);
     if (fs.existsSync(globalPath)) {
       return globalPath;
     }
@@ -161,7 +161,7 @@ export class InteractionManager extends EventEmitter {
       return cwdPath;
     }
 
-    console.error(`[sidecar] Warning: ink-runner not found. Expected at: ${distPath}`);
+    console.error(`[mide] Warning: ink-runner not found. Expected at: ${distPath}`);
     return distPath;
   }
 
@@ -190,7 +190,7 @@ export class InteractionManager extends EventEmitter {
       }
     } else if (options.inkFile) {
       // Custom mode from file - saves tokens!
-      // Resolve relative paths from .sidecar/interactive directory
+      // Resolve relative paths from .mide/interactive directory
       const resolvedPath = this.resolveInkFile(options.inkFile);
       const escapedPath = resolvedPath.replace(/'/g, "'\\''");
       command = `node "${this.inkRunnerPath}" --file '${escapedPath}'${interactionIdArg}`;

@@ -134,8 +134,8 @@ export const SettingsSchema = z.object({
     .describe("Pane layout: horizontal, vertical, grid, main-left, main-top (default: grid)"),
   tmuxSessionPrefix: z
     .string()
-    .default("sidecar")
-    .describe("Prefix for tmux session names (default: sidecar)"),
+    .default("mide")
+    .describe("Prefix for tmux session names (default: mide)"),
   // Auto-attach terminal
   autoAttachTerminal: z
     .boolean()
@@ -148,7 +148,7 @@ export const SettingsSchema = z.object({
   tmuxMode: z
     .enum(["embedded", "standalone"])
     .optional()
-    .describe("Tmux mode: embedded (panes in current session) or standalone (separate sidecar session)"),
+    .describe("Tmux mode: embedded (panes in current session) or standalone (separate IDE session)"),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -158,7 +158,7 @@ export const ConfigSchema = z.object({
   // Top-level shortcuts
   layout: LayoutSchema.optional().describe("Pane layout shorthand (overrides settings.layout)"),
   // Full settings
-  settings: SettingsSchema.optional().describe("Global settings for the sidecar"),
+  settings: SettingsSchema.optional().describe("Global settings for the IDE"),
   processes: z.record(ProcessConfigSchema),
 });
 
@@ -173,7 +173,7 @@ export interface ResolvedProcessConfig extends Omit<ProcessConfig, 'dependsOn'> 
   dependsOn?: string[];
 }
 
-const CONFIG_FILENAMES = ["sidecar.yaml", "sidecar.yml"];
+const CONFIG_FILENAMES = ["mide.yaml", "mide.yml"];
 
 /**
  * Check if a config file exists in the current working directory

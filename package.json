@@ -1,11 +1,11 @@
 {
-  "name": "mcp-sidecar",
+  "name": "mcp-ide",
   "version": "0.1.0",
-  "description": "MCP server that runs your dev servers and provides preview URLs",
+  "description": "Interactive Development Environment for Claude Code - manage processes, terminals, and interactive UIs",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "mcp-sidecar": "dist/index.js"
+    "mcp-ide": "dist/index.js"
   },
   "files": [
     "dist",
@@ -22,22 +22,26 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/buremba/mcp-sidecar.git"
+    "url": "git+https://github.com/buremba/claude-ide.git"
   },
   "author": "buremba",
-  "homepage": "https://github.com/buremba/mcp-sidecar#readme",
+  "homepage": "https://github.com/buremba/claude-ide#readme",
   "bugs": {
-    "url": "https://github.com/buremba/mcp-sidecar/issues"
+    "url": "https://github.com/buremba/claude-ide/issues"
   },
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "sidecar",
+    "ide",
+    "interactive",
     "dev-server",
-    "preview-url",
+    "terminal",
     "process-manager",
     "claude-code",
-    "ai-agent"
+    "ai-agent",
+    "form",
+    "dashboard",
+    "tui"
   ],
   "license": "MIT",
   "dependencies": {

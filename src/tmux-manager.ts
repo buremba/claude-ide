@@ -12,9 +12,9 @@ export interface GroupPosition {
 
 export type TerminalApp = "auto" | "tmux" | "ghostty" | "iterm" | "kitty" | "terminal";
 
-export type SidecarStatus = "pending" | "running" | "completed" | "failed";
+export type IdeStatus = "pending" | "running" | "completed" | "failed";
 
-const STATUS_ICONS: Record<SidecarStatus, string> = {
+const STATUS_ICONS: Record<IdeStatus, string> = {
   pending: "⏳",
   running: "🔄",
   completed: "✅",
@@ -66,9 +66,9 @@ export async function isTmuxAvailable(): Promise<boolean> {
 }
 
 /**
- * Get all active sidecar tmux sessions
+ * Get all active IDE tmux sessions
  */
-export async function listSidecarSessions(prefix = "sidecar"): Promise<Array<{ name: string; windows: number; created: Date }>> {
+export async function listIdeSessions(prefix = "mide"): Promise<Array<{ name: string; windows: number; created: Date }>> {
   try {
     const { stdout } = await execFileAsync("tmux", [
       "list-sessions",
@@ -111,7 +111,7 @@ export async function getCurrentTmuxSession(): Promise<string | null> {
 
 /**
  * Manages panes in the user's current tmux session (embedded mode)
- * Used when mcp-sidecar is running inside an existing tmux session
+ * Used when claude-ide is running inside an existing tmux session
  */
 export class EmbeddedTmuxManager {
   private paneMap = new Map<string, string>(); // name -> paneId
@@ -144,13 +144,13 @@ export class EmbeddedTmuxManager {
         ]);
         sourcePaneId = stdout.trim();
         if (sourcePaneId) {
-          console.error(`[sidecar] Embedded mode: session=${session}, sourcePaneId=${sourcePaneId} (fallback via display-message)`);
+          console.error(`[mide] Embedded mode: session=${session}, sourcePaneId=${sourcePaneId} (fallback via display-message)`);
         }
       } catch {
-        console.error(`[sidecar] Warning: Could not get active pane for session ${session}`);
+        console.error(`[mide] Warning: Could not get active pane for session ${session}`);
       }
     } else {
-      console.error(`[sidecar] Embedded mode: session=${session}, sourcePaneId=${sourcePaneId}`);
+      console.error(`[mide] Embedded mode: session=${session}, sourcePaneId=${sourcePaneId}`);
     }
 
     return new EmbeddedTmuxManager(session, sourcePaneId);
@@ -206,7 +206,7 @@ export class EmbeddedTmuxManager {
       // Layout change might fail, that's ok
     }
 
-    console.error(`[sidecar] Created embedded pane: ${name} (${paneId})`);
+    console.error(`[mide] Created embedded pane: ${name} (${paneId})`);
     return paneId;
   }
 
@@ -256,16 +256,16 @@ export class EmbeddedTmuxManager {
   /**
    * Set the status (updates current window title)
    */
-  async setStatus(status: SidecarStatus, message?: string): Promise<void> {
+  async setStatus(status: IdeStatus, message?: string): Promise<void> {
     const icon = STATUS_ICONS[status];
     const title = message
-      ? `${icon} Sidecar: ${message}`
-      : `${icon} Sidecar`;
+      ? `${icon} MIDE: ${message}`
+      : `${icon} MIDE`;
 
     try {
       await execFileAsync("tmux", ["rename-window", title]);
     } catch (err) {
-      console.error(`[sidecar] Failed to set status: ${err}`);
+      console.error(`[mide] Failed to set status: ${err}`);
     }
   }
 
@@ -316,7 +316,7 @@ export class TmuxManager {
   private groupOrder: string[] = [];
 
   constructor(projectName: string, options: TmuxManagerOptions = {}) {
-    const prefix = options.sessionPrefix ?? "sidecar";
+    const prefix = options.sessionPrefix ?? "mide";
     this.sessionName = `${prefix}-${this.sanitizeName(projectName)}`;
     this.layout = options.layout ?? "grid";
 
@@ -402,7 +402,7 @@ export class TmuxManager {
       const ageMs = Date.now() - createdTime;
       if (ageMs < 30000) {
         // Session exists and is recent, reuse it
-        console.error(`[sidecar] Reusing existing session: ${this.sessionName} (created ${Math.round(ageMs / 1000)}s ago)`);
+        console.error(`[mide] Reusing existing session: ${this.sessionName} (created ${Math.round(ageMs / 1000)}s ago)`);
         return this.sessionName;
       }
     } catch {
@@ -432,7 +432,7 @@ export class TmuxManager {
       "-s",
       finalName,
       "-n",
-      "sidecar",
+      "ide",
       // Keep pane alive after command exits to capture exit status
       "-x", "200", // Set initial width
       "-y", "50",  // Set initial height
@@ -937,13 +937,13 @@ export class TmuxManager {
   }
 
   /**
-   * Set the sidecar status displayed in the terminal window title
+   * Set the MIDE status displayed in the terminal window title
    */
-  async setStatus(status: SidecarStatus, message?: string): Promise<void> {
+  async setStatus(status: IdeStatus, message?: string): Promise<void> {
     const icon = STATUS_ICONS[status];
     const title = message
-      ? `${icon} Sidecar: ${message}`
-      : `${icon} Sidecar`;
+      ? `${icon} MIDE: ${message}`
+      : `${icon} MIDE`;
 
     try {
       // Set tmux window name (visible in tmux status bar and terminal title if set-titles is on)
@@ -952,7 +952,7 @@ export class TmuxManager {
         title
       ]);
     } catch (err) {
-      console.error(`[sidecar] Failed to set status: ${err}`);
+      console.error(`[mide] Failed to set status: ${err}`);
     }
   }
 
@@ -970,7 +970,7 @@ export class TmuxManager {
         "list-clients", "-t", this.sessionName, "-F", "#{client_name}"
       ]);
       if (stdout.trim()) {
-        console.error(`[sidecar] Terminal already attached to ${this.sessionName}`);
+        console.error(`[mide] Terminal already attached to ${this.sessionName}`);
         return true;
       }
     } catch {
@@ -982,7 +982,7 @@ export class TmuxManager {
       if (insideTmux) {
         return this.openInTmuxWindow(cmd);
       } else {
-        console.error(`[sidecar] Not inside tmux. Attach with: ${cmd}`);
+        console.error(`[mide] Not inside tmux. Attach with: ${cmd}`);
         return false;
       }
     }
@@ -990,7 +990,7 @@ export class TmuxManager {
     // Handle "auto" - detect tmux first, then fall through to external terminal
     if (terminalApp === "auto" || !terminalApp) {
       if (insideTmux) {
-        console.error("[sidecar] Detected tmux environment, creating window");
+        console.error("[mide] Detected tmux environment, creating window");
         return this.openInTmuxWindow(cmd);
       }
       // Fall through to external terminal detection below
@@ -998,12 +998,12 @@ export class TmuxManager {
 
     // External terminals only supported on macOS
     if (process.platform !== "darwin") {
-      console.error(`[sidecar] Auto-attach only supported on macOS. Run: ${cmd}`);
+      console.error(`[mide] Auto-attach only supported on macOS. Run: ${cmd}`);
       return false;
     }
 
     const terminal = terminalApp === "auto" || !terminalApp ? detectTerminal() : terminalApp;
-    console.error(`[sidecar] Opening terminal: ${terminal}`);
+    console.error(`[mide] Opening terminal: ${terminal}`);
 
     switch (terminal) {
       case "ghostty":
@@ -1018,12 +1018,12 @@ export class TmuxManager {
   }
 
   /**
-   * Open sidecar session in a new window of the current tmux session
+   * Open MIDE session in a new window of the current tmux session
    * Only works when already inside tmux
    */
   private async openInTmuxWindow(attachCmd: string): Promise<boolean> {
     if (!process.env.TMUX) {
-      console.error("[sidecar] Not inside tmux, cannot create window");
+      console.error("[mide] Not inside tmux, cannot create window");
       return false;
     }
 
@@ -1031,13 +1031,13 @@ export class TmuxManager {
       // Create new window in current session that runs the attach command
       await execFileAsync("tmux", [
         "new-window",
-        "-n", "sidecar",  // Window name
-        attachCmd,        // Command: "tmux attach -t sidecar-xxx"
+        "-n", "mide",  // Window name
+        attachCmd,     // Command: "tmux attach -t mide-xxx"
       ]);
-      console.error(`[sidecar] Created tmux window attached to ${this.sessionName}`);
+      console.error(`[mide] Created tmux window attached to ${this.sessionName}`);
       return true;
     } catch (err) {
-      console.error("[sidecar] Failed to create tmux window:", err);
+      console.error("[mide] Failed to create tmux window:", err);
       return false;
     }
   }
@@ -1047,15 +1047,15 @@ export class TmuxManager {
    */
   private openInGhostty(command: string): boolean {
     try {
-      const title = `Sidecar: ${this.sessionName}`;
+      const title = `MIDE: ${this.sessionName}`;
       spawn("open", ["-na", "Ghostty.app", "--args", "--title", title, "-e", "/bin/bash", "-c", command], {
         detached: true,
         stdio: "ignore",
       }).unref();
-      console.error(`[sidecar] Opened Ghostty attached to ${this.sessionName}`);
+      console.error(`[mide] Opened Ghostty attached to ${this.sessionName}`);
       return true;
     } catch (err) {
-      console.error(`[sidecar] Failed to open Ghostty: ${err}`);
+      console.error(`[mide] Failed to open Ghostty: ${err}`);
       return false;
     }
   }
@@ -1065,7 +1065,7 @@ export class TmuxManager {
    */
   private openInITerm(command: string): boolean {
     try {
-      const title = `Sidecar: ${this.sessionName}`;
+      const title = `MIDE: ${this.sessionName}`;
       // Escape double quotes in command for AppleScript
       const escapedCommand = command.replace(/"/g, '\\"');
       const script = `
@@ -1077,10 +1077,10 @@ tell application "iTerm2"
   end tell
 end tell`;
       spawn("osascript", ["-e", script], { detached: true, stdio: "ignore" }).unref();
-      console.error(`[sidecar] Opened iTerm2 attached to ${this.sessionName}`);
+      console.error(`[mide] Opened iTerm2 attached to ${this.sessionName}`);
       return true;
     } catch (err) {
-      console.error(`[sidecar] Failed to open iTerm2: ${err}`);
+      console.error(`[mide] Failed to open iTerm2: ${err}`);
       return false;
     }
   }
@@ -1089,14 +1089,14 @@ end tell`;
    * Open Kitty with command
    */
   private openInKitty(command: string): boolean {
-    const title = `Sidecar: ${this.sessionName}`;
+    const title = `MIDE: ${this.sessionName}`;
     try {
       // Try kitty in PATH first, fall back to full path
       spawn("kitty", ["--title", title, "-e", "/bin/bash", "-c", command], {
         detached: true,
         stdio: "ignore",
       }).unref();
-      console.error(`[sidecar] Opened Kitty attached to ${this.sessionName}`);
+      console.error(`[mide] Opened Kitty attached to ${this.sessionName}`);
       return true;
     } catch (err) {
       // Try full path as fallback
@@ -1105,10 +1105,10 @@ end tell`;
           detached: true,
           stdio: "ignore",
         }).unref();
-        console.error(`[sidecar] Opened Kitty attached to ${this.sessionName}`);
+        console.error(`[mide] Opened Kitty attached to ${this.sessionName}`);
         return true;
       } catch (err2) {
-        console.error(`[sidecar] Failed to open Kitty: ${err2}`);
+        console.error(`[mide] Failed to open Kitty: ${err2}`);
         return false;
       }
     }
@@ -1124,17 +1124,17 @@ end tell`;
       const path = await import("path");
 
       // Create a temporary .command script
-      const scriptPath = path.join(os.tmpdir(), `sidecar-attach-${this.sessionName}.command`);
+      const scriptPath = path.join(os.tmpdir(), `mide-attach-${this.sessionName}.command`);
       const script = `#!/bin/bash\n${command}\n`;
       fs.writeFileSync(scriptPath, script, { mode: 0o755 });
 
       // Open it with default terminal
       spawn("open", [scriptPath], { detached: true, stdio: "ignore" }).unref();
 
-      console.error(`[sidecar] Opened Terminal.app attached to ${this.sessionName}`);
+      console.error(`[mide] Opened Terminal.app attached to ${this.sessionName}`);
       return true;
     } catch (err) {
-      console.error(`[sidecar] Failed to open Terminal.app: ${err}`);
+      console.error(`[mide] Failed to open Terminal.app: ${err}`);
       return false;
     }
   }

@@ -329,9 +329,9 @@ export class ManagedProcess {
         const shouldForce = options.force ?? this.config.force;
 
         if (shouldForce) {
-          console.error(`[sidecar] Port ${this.config.port} in use by PID ${conflictPid}, force-killing...`);
+          console.error(`[mide] Port ${this.config.port} in use by PID ${conflictPid}, force-killing...`);
           if (await killProcess(conflictPid)) {
-            console.error(`[sidecar] Killed PID ${conflictPid}`);
+            console.error(`[mide] Killed PID ${conflictPid}`);
           } else {
             throw new Error(`Failed to kill process ${conflictPid} using port ${this.config.port}`);
           }
@@ -369,7 +369,7 @@ export class ManagedProcess {
     );
 
     this.lastCapturedOutput = "";
-    console.error(`[sidecar] Started "${this.name}" in tmux pane ${this.paneId}`);
+    console.error(`[mide] Started "${this.name}" in tmux pane ${this.paneId}`);
 
     // Mark as running immediately (port detection happens async)
     this._status = "running";

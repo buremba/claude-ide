@@ -1,29 +1,29 @@
 #!/bin/bash
-# Inject sidecar context at session start
+# Inject MIDE context at session start
 
 # Get workspace from stdin JSON
 INPUT=$(cat)
 WORKSPACE=$(echo "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$WORKSPACE" ] && WORKSPACE=$(pwd)
 
-# Check for sidecar.yaml
+# Check for mide.yaml
 CONFIG_FILE=""
-if [ -f "$WORKSPACE/sidecar.yaml" ]; then
-  CONFIG_FILE="$WORKSPACE/sidecar.yaml"
-elif [ -f "$WORKSPACE/sidecar.yml" ]; then
-  CONFIG_FILE="$WORKSPACE/sidecar.yml"
+if [ -f "$WORKSPACE/mide.yaml" ]; then
+  CONFIG_FILE="$WORKSPACE/mide.yaml"
+elif [ -f "$WORKSPACE/mide.yml" ]; then
+  CONFIG_FILE="$WORKSPACE/mide.yml"
 fi
 
 if [ -n "$CONFIG_FILE" ]; then
   PROJECT=$(basename "$WORKSPACE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')
-  SESSION="sidecar-$PROJECT"
+  SESSION="mide-$PROJECT"
 
   # Check if tmux session exists
   if tmux has-session -t "$SESSION" 2>/dev/null; then
-    echo "Sidecar session: $SESSION (attach: tmux attach -t $SESSION)"
+    echo "MIDE session: $SESSION (attach: tmux attach -t $SESSION)"
     echo ""
 
-    # Extract process names, ports, and descriptions from sidecar.yaml
+    # Extract process names, ports, and descriptions from mide.yaml
     # Format: process_name|port|description
     SERVICES=$(awk '
 /^processes:/ { in_proc=1; next }
@@ -50,7 +50,7 @@ END { if (proc != "" && port != "") print proc"|"port"|"desc }
       echo ""
     fi
 
-    # Extract process names from sidecar.yaml (keys under 'processes:')
+    # Extract process names from mide.yaml (keys under 'processes:')
     # Skip empty lines, exit when hitting next top-level key
     PROC_NAMES=$(awk '/^processes:/{found=1; next} found && /^$/{next} found && /^[^ ]/{exit} found && /^  [a-zA-Z0-9_-]+:/{gsub(/:.*/, ""); gsub(/^  /, ""); print}' "$CONFIG_FILE")
 
@@ -78,8 +78,8 @@ END { if (proc != "" && port != "") print proc"|"port"|"desc }
     done
 
     # List available ink files from both project and global locations
-    PROJECT_INK_DIR="$WORKSPACE/.sidecar/interactive"
-    GLOBAL_INK_DIR="$HOME/.sidecar/interactive"
+    PROJECT_INK_DIR="$WORKSPACE/.mide/interactive"
+    GLOBAL_INK_DIR="$HOME/.mide/interactive"
 
     PROJECT_INK=""
     GLOBAL_INK=""
@@ -96,24 +96,24 @@ END { if (proc != "" && port != "") print proc"|"port"|"desc }
       echo ""
       echo "Available ink files (for show_interaction):"
       if [ -n "$PROJECT_INK" ]; then
-        echo "  Project (.sidecar/interactive/):"
+        echo "  Project (.mide/interactive/):"
         echo "$PROJECT_INK" | sed 's/^/    /'
       fi
       if [ -n "$GLOBAL_INK" ]; then
-        echo "  Global (~/.sidecar/interactive/):"
+        echo "  Global (~/.mide/interactive/):"
         echo "$GLOBAL_INK" | sed 's/^/    /'
       fi
     fi
 
     echo ""
-    echo "Use list_processes MCP tool or /sidecar:process-management for full status."
+    echo "Use /ide:start to manage processes and create terminals."
   else
-    echo "Sidecar project detected but session not running."
+    echo "MIDE project detected but session not running."
     echo "Processes will start when MCP tools are used."
 
     # Still show ink files even if session not running
-    PROJECT_INK_DIR="$WORKSPACE/.sidecar/interactive"
-    GLOBAL_INK_DIR="$HOME/.sidecar/interactive"
+    PROJECT_INK_DIR="$WORKSPACE/.mide/interactive"
+    GLOBAL_INK_DIR="$HOME/.mide/interactive"
 
     PROJECT_INK=""
     GLOBAL_INK=""
@@ -130,11 +130,11 @@ END { if (proc != "" && port != "") print proc"|"port"|"desc }
       echo ""
       echo "Available ink files (for show_interaction):"
       if [ -n "$PROJECT_INK" ]; then
-        echo "  Project (.sidecar/interactive/):"
+        echo "  Project (.mide/interactive/):"
         echo "$PROJECT_INK" | sed 's/^/    /'
       fi
       if [ -n "$GLOBAL_INK" ]; then
-        echo "  Global (~/.sidecar/interactive/):"
+        echo "  Global (~/.mide/interactive/):"
         echo "$GLOBAL_INK" | sed 's/^/    /'
       fi
     fi

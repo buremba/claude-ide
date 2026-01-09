@@ -1,19 +1,19 @@
-# MCP Sidecar Project Instructions
+# Claude IDE Project Instructions
 
 ## Testing
 
 Run the MCP server and test with Claude Code:
 
 ```bash
-# Create a sidecar.yaml in any project directory
+# Create an mide.yaml in any project directory
 cd /path/to/project
-npx mcp-sidecar
+npx mcp-ide
 
 # Or run from this repo
 node dist/index.js
 ```
 
-Then use the sidecar tools (`start_process`, `stop_process`, `get_logs`, `get_status`, etc.) to manage processes.
+Then use the IDE tools (`start_process`, `stop_process`, `get_logs`, `get_status`, etc.) to manage processes.
 
 ## Screenshots
 

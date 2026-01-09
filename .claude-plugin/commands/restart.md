@@ -1,5 +1,5 @@
 ---
-allowed-tools: mcp__sidecar__restart_process, mcp__sidecar__list_processes, mcp__sidecar__get_status
+allowed-tools: mcp__ide__restart_process, mcp__ide__list_processes, mcp__ide__get_status
 ---
 
 Restart process: $ARGUMENTS

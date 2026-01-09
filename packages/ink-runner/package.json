@@ -1,7 +1,7 @@
 {
-  "name": "@mcp-sidecar/ink-runner",
+  "name": "@mcp-ide/ink-runner",
   "version": "0.1.0",
-  "description": "Interactive form runner using Ink for mcp-sidecar",
+  "description": "Interactive form runner using Ink for mcp-ide",
   "type": "module",
   "main": "dist/index.js",
   "bin": {

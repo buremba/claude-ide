@@ -133,7 +133,7 @@ export class ProcessManager extends EventEmitter {
     for (const processConfig of sorted) {
       const blockReason = this.getAutoStartBlockReason(processConfig);
       if (blockReason) {
-        console.error(`[sidecar] Not auto-starting "${processConfig.name}" (${blockReason})`);
+        console.error(`[mide] Not auto-starting "${processConfig.name}" (${blockReason})`);
         continue;
       }
       await this.startManagedProcess(processConfig);
@@ -292,7 +292,7 @@ export class ProcessManager extends EventEmitter {
 
     // Stop removed processes
     for (const name of removed) {
-      console.error(`[sidecar] Stopping removed process "${name}"`);
+      console.error(`[mide] Stopping removed process "${name}"`);
       const process = this.processes.get(name);
       if (process) {
         await process.stop();
@@ -309,7 +309,7 @@ export class ProcessManager extends EventEmitter {
 
     // Restart changed processes
     for (const name of changed) {
-      console.error(`[sidecar] Restarting changed process "${name}"`);
+      console.error(`[mide] Restarting changed process "${name}"`);
       const process = this.processes.get(name);
       if (process) {
         await process.stop();
@@ -379,10 +379,10 @@ export class ProcessManager extends EventEmitter {
       if (added.includes(processConfig.name) || changed.includes(processConfig.name)) {
         const blockReason = this.getAutoStartBlockReason(processConfig);
         if (blockReason) {
-          console.error(`[sidecar] Not auto-starting "${processConfig.name}" (${blockReason})`);
+          console.error(`[mide] Not auto-starting "${processConfig.name}" (${blockReason})`);
           continue;
         }
-        console.error(`[sidecar] Starting process "${processConfig.name}"`);
+        console.error(`[mide] Starting process "${processConfig.name}"`);
         await this.startManagedProcess(processConfig);
       }
     }
@@ -473,7 +473,7 @@ export class ProcessManager extends EventEmitter {
         clearTimeout(existingTimer);
       }
 
-      console.error(`[sidecar] Process "${name}" exited (code=${exitCode}), restarting in ${delay}ms (attempt ${process.restartCount + 1}/${config.maxRestarts})`);
+      console.error(`[mide] Process "${name}" exited (code=${exitCode}), restarting in ${delay}ms (attempt ${process.restartCount + 1}/${config.maxRestarts})`);
 
       // Schedule restart
       const timer = setTimeout(async () => {
@@ -487,7 +487,7 @@ export class ProcessManager extends EventEmitter {
 
       this.restartTimers.set(name, timer);
     } else if (shouldRestart) {
-      console.error(`[sidecar] Process "${name}" exceeded max restarts (${config.maxRestarts}), giving up`);
+      console.error(`[mide] Process "${name}" exceeded max restarts (${config.maxRestarts}), giving up`);
     }
   }
 
@@ -731,7 +731,7 @@ export class ProcessManager extends EventEmitter {
     };
 
     this.dynamicTerminals.set(name, terminal);
-    console.error(`[sidecar] Created dynamic terminal "${name}" in group "${targetGroup}"`);
+    console.error(`[mide] Created dynamic terminal "${name}" in group "${targetGroup}"`);
 
     return terminal;
   }
@@ -753,7 +753,7 @@ export class ProcessManager extends EventEmitter {
     await this.tmuxManager.killPane(name);
 
     this.dynamicTerminals.delete(name);
-    console.error(`[sidecar] Removed dynamic terminal "${name}"`);
+    console.error(`[mide] Removed dynamic terminal "${name}"`);
   }
 
   /**

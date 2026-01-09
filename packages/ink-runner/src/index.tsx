@@ -43,7 +43,7 @@ function parseArgs(): CliArgs {
 
 function showHelp(): void {
   console.log(`
-ink-runner - Interactive form runner for mcp-sidecar
+ink-runner - Interactive form runner for mcp-ide
 
 Usage:
   ink-runner --schema '<json>' [--title 'Form Title']

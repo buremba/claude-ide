@@ -1,5 +1,5 @@
-# Example sidecar.yaml configuration
-# Copy this to your project root as sidecar.yaml
+# Example mide.yaml configuration
+# Copy this to your project root as mide.yaml
 
 # Layout options (top-level shortcut):
 # Simple presets:
@@ -16,8 +16,8 @@
 #       servers: [frontend, backend]   # top row (named "servers")
 #       tools: [worker, api]           # bottom row (named "tools")
 #
-# Named groups enable dynamic terminals via MCP:
-#   create_terminal(name="debug", command="bash", group="tools")
+# Named groups enable dynamic panes via MCP:
+#   create_pane(name="debug", command="bash", group="tools")
 
 # Optional settings
 # settings:

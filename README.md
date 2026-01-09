@@ -1,21 +1,21 @@
-# mcp-sidecar
+# mcp-ide
 
-MCP server for managing development processes. Start, stop, and monitor your dev servers through Claude Code.
+Interactive Development Environment for Claude Code. Create terminal/process panes, show interactive forms & questions, manage dev servers, build TUI dashboards.
 
 ## Installation
 
 ```bash
-npm install -g mcp-sidecar
+npm install -g mcp-ide
 ```
 
 Or use with npx:
 ```bash
-npx mcp-sidecar
+npx mcp-ide
 ```
 
 ## Quick Start
 
-1. Create a `sidecar.yaml` in your project:
+1. Create an `mide.yaml` in your project:
 
 ```yaml
 processes:
@@ -33,9 +33,9 @@ processes:
 ```json
 {
   "mcpServers": {
-    "sidecar": {
+    "ide": {
       "command": "npx",
-      "args": ["-y", "mcp-sidecar"]
+      "args": ["-y", "mcp-ide"]
     }
   }
 }
@@ -68,8 +68,8 @@ Process "api" restarted
 | `get_status(name)` | Get detailed status |
 | `get_logs(name, tail?)` | Get process logs |
 | `get_url(name)` | Get process URL |
-| `create_terminal(name, command, group?)` | Create a dynamic terminal in a layout group |
-| `remove_terminal(name)` | Remove a dynamic terminal |
+| `create_pane(name, command, group?)` | Create a terminal/process pane for dev servers, commands |
+| `remove_pane(name)` | Remove a terminal/process pane |
 
 ### Interactive Forms
 
@@ -82,9 +82,9 @@ Process "api" restarted
 **Example usage:**
 
 ```typescript
-// Create a custom Ink component in .sidecar/interactive/picker.tsx
+// Create a custom Ink component in .mide/interactive/picker.tsx
 show_interaction({
-  ink_file: "picker.tsx",  // Relative to .sidecar/interactive/
+  ink_file: "picker.tsx",  // Relative to .mide/interactive/
   title: "Select an option",
   block: true  // Wait for user response
 })
@@ -96,7 +96,7 @@ Custom Ink components should:
 - Call `onComplete(result)` when done
 - Use `useApp().exit()` to close
 
-See `.sidecar/interactive/demo.tsx` for an example.
+See `.mide/interactive/demo.tsx` for an example.
 
 ## Configuration
 
@@ -130,7 +130,7 @@ settings:
   processStopTimeout: 5000    # Graceful stop timeout (ms)
 
   # Tmux settings
-  tmuxSessionPrefix: sidecar  # Prefix for tmux session names
+  tmuxSessionPrefix: mide      # Prefix for tmux session names
   layout: grid                # Default pane layout
 
   # Terminal settings
@@ -175,7 +175,7 @@ layout:
     right: [backend, api]          # right column
 ```
 
-Named groups enable dynamic terminals - use `create_terminal(name, command, group)` to add terminals to specific groups at runtime.
+Named groups enable dynamic panes - use `create_pane(name, command, group)` to add terminal/process panes to specific groups at runtime.
 
 ### Port Detection
 

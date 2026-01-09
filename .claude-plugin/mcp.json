@@ -1,9 +1,9 @@
 {
-  "sidecar": {
+  "ide": {
     "command": "node",
     "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"],
     "env": {
-      "MCP_SIDECAR_STATUS_ENABLED": "true"
+      "CLAUDE_IDE_STATUS_ENABLED": "true"
     }
   }
 }

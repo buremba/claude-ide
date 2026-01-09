@@ -1,17 +1,17 @@
 {
-  "name": "mcp-sidecar",
+  "name": "claude-ide",
   "owner": {
     "name": "buremba"
   },
   "metadata": {
-    "description": "Background process management for Claude Code",
+    "description": "Interactive Development Environment for Claude Code",
     "version": "0.1.0"
   },
   "plugins": [
     {
-      "name": "sidecar",
+      "name": "ide",
       "source": "./",
-      "description": "Background process management with live statusline. Auto-starts dev servers from sidecar.yaml and shows status in Claude Code's statusline.",
+      "description": "Interactive Development Environment: create terminal/process panes, show interactive forms and questions, TUI dashboards, manage dev servers from mide.yaml.",
       "version": "0.1.0",
       "author": {
         "name": "buremba"

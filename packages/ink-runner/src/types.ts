@@ -33,7 +33,7 @@ export interface FormResult {
 
 /**
  * Output protocol: Print this to stdout when form completes
- * The sidecar captures this from the tmux pane
+ * The IDE captures this from the tmux pane
  */
 export const RESULT_PREFIX = "__MCP_RESULT__:";
 
