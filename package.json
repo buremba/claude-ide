@@ -10,6 +10,7 @@
   "files": [
     "dist",
     ".claude-plugin",
+    "templates",
     "!dist/**/*.map"
   ],
   "scripts": {

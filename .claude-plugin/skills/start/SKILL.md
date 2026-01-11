@@ -51,13 +51,15 @@ EOF
 
 ## Built-in Components
 
-For single questions, use pre-built components:
+Bundled components (no setup required):
 ```bash
-termos run .termos/interactive/select.tsx --prompt "Pick one" --options "A,B,C"
-termos run .termos/interactive/text-input.tsx --prompt "Your name?"
-termos run .termos/interactive/confirm.tsx --prompt "Continue?"
-termos run .termos/interactive/multi-select.tsx --prompt "Select all" --options "X,Y,Z"
+termos run select.tsx --prompt "Pick one" --options "A,B,C"
+termos run text-input.tsx --prompt "Your name?"
+termos run confirm.tsx --prompt "Continue?"
+termos run multi-select.tsx --prompt "Select all" --options "X,Y,Z"
 ```
+
+Override by creating `.termos/interactive/<name>.tsx` in your project.
 
 ## Set Status & Suggested Prompts
 
