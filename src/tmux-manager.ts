@@ -126,21 +126,12 @@ export async function cleanupStaleSession(sessionName: string): Promise<void> {
   }
 }
 
-/**
- * Check if we're running inside a tmux session
- */
-export function isInsideTmux(): boolean {
-  return !!process.env.TMUX;
-}
-
 export interface PaneInfo {
   paneId: string;
   panePid: number;
   isDead: boolean;
   exitStatus?: number;
 }
-
-export type TmuxMode = "owned" | "embedded";
 
 export interface TmuxManagerOptions {
   sessionPrefix?: string;
@@ -196,71 +187,23 @@ export async function listIdeSessions(prefix = "termos"): Promise<Array<{ name: 
 }
 
 /**
- * Get the current tmux session name from tmux
- * Returns null if not inside tmux
- */
-export async function getCurrentTmuxSession(): Promise<string | null> {
-  if (!process.env.TMUX) return null;
-
-  try {
-    const { stdout } = await execFileAsync("tmux", ["display-message", "-p", "#{session_name}"]);
-    return stdout.trim();
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Manages a tmux session for process orchestration
- * Supports two modes:
- * - "owned": Creates and manages a dedicated session (use createOwned)
- * - "embedded": Works within an existing tmux session (use createEmbedded)
  */
 export class TmuxManager {
   readonly sessionName: string;
   readonly configDir: string;
-  readonly mode: TmuxMode;
   private paneMap = new Map<string, string>();
-  private sourcePaneId?: string; // For embedded mode: the pane where Claude is running
 
-  private constructor(
-    sessionName: string,
-    options: { configDir?: string; mode?: TmuxMode; sourcePaneId?: string } = {}
-  ) {
+  private constructor(sessionName: string, configDir?: string) {
     this.sessionName = sessionName;
-    this.configDir = options.configDir ?? process.cwd();
-    this.mode = options.mode ?? "owned";
-    this.sourcePaneId = options.sourcePaneId;
+    this.configDir = configDir ?? process.cwd();
   }
 
   /** Create a TmuxManager that owns a dedicated session */
   static createOwned(projectName: string, options: TmuxManagerOptions = {}, configDir?: string): TmuxManager {
     const prefix = options.sessionPrefix ?? "termos";
     const sessionName = `${prefix}-${projectName.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase()}`;
-    return new TmuxManager(sessionName, { configDir, mode: "owned" });
-  }
-
-  /** Create a TmuxManager embedded in the current tmux session */
-  static async createEmbedded(): Promise<TmuxManager> {
-    const session = await getCurrentTmuxSession();
-    if (!session) {
-      throw new Error("createEmbedded requires running inside tmux");
-    }
-
-    let sourcePaneId = process.env.TMUX_PANE || "";
-    if (!sourcePaneId) {
-      try {
-        const { stdout } = await execFileAsync("tmux", [
-          "display-message", "-t", session, "-p", "#{pane_id}"
-        ]);
-        sourcePaneId = stdout.trim();
-      } catch {
-        console.error(`[termos] Warning: Could not get active pane for session ${session}`);
-      }
-    }
-    console.error(`[termos] Embedded mode: session=${session}, sourcePaneId=${sourcePaneId}`);
-
-    return new TmuxManager(session, { mode: "embedded", sourcePaneId });
+    return new TmuxManager(sessionName, configDir);
   }
 
   /** Get .termos directory path */
@@ -300,9 +243,8 @@ export class TmuxManager {
 
   /** Get pane dimensions (for auto direction) */
   private async getPaneDimensions(target?: string): Promise<{ width: number; height: number }> {
-    const t = target || this.sourcePaneId || "";
-    const args = t
-      ? ["display-message", "-t", t, "-p", "#{pane_width} #{pane_height}"]
+    const args = target
+      ? ["display-message", "-t", target, "-p", "#{pane_width} #{pane_height}"]
       : ["display-message", "-p", "#{pane_width} #{pane_height}"];
     const { stdout } = await execFileAsync("tmux", args);
     const [w, h] = stdout.trim().split(" ");
@@ -894,10 +836,8 @@ export class TmuxManager {
 
   /**
    * Create a new pane
-   * Unified method for all pane creation scenarios:
-   * - Embedded mode: splits from sourcePaneId
    * - targetWindow: splits in specific window (e.g., 0 for dashboard)
-   * - Default (owned mode): respawns first pane if empty, else splits session
+   * - Default: respawns first pane if empty, else splits session
    */
   async createPane(
     name: string,
@@ -909,6 +849,7 @@ export class TmuxManager {
       skipRebalance?: boolean;
       targetWindow?: number;
       setTitle?: boolean;
+      ephemeral?: boolean;  // If true, pane closes when process exits (no remain-on-exit)
     }
   ): Promise<string> {
     if (this.paneMap.has(name)) {
@@ -928,14 +869,11 @@ export class TmuxManager {
     let paneId: string;
 
     // Determine target and strategy
-    if (this.mode === "embedded" && this.sourcePaneId) {
-      // Embedded mode: split from source pane with direction
-      paneId = await this.splitWithDirection(shellCommand, cwd, this.sourcePaneId, options);
-    } else if (options?.targetWindow !== undefined) {
+    if (options?.targetWindow !== undefined) {
       // Target specific window (e.g., window 0 for dynamic panes)
       paneId = await this.splitWithDirection(shellCommand, cwd, `${this.sessionName}:${options.targetWindow}`, options);
     } else {
-      // Owned mode: respawn first pane if empty, else split session
+      // Respawn first pane if empty, else split session
       const panes = await this.listPanes();
       if (panes.length === 1 && !this.paneMap.size) {
         paneId = panes[0].paneId;
@@ -955,6 +893,16 @@ export class TmuxManager {
         await execFileAsync("tmux", ["select-pane", "-t", paneId, "-T", name]);
       } catch { /* non-fatal */ }
     }
+
+    // Always keep pane visible on exit (remain-on-exit: on)
+    // Successful interactions are cleaned up by the interaction manager
+    // Failed interactions stay visible so user can read the error
+    try {
+      await execFileAsync("tmux", [
+        "set-option", "-t", paneId,
+        "remain-on-exit", "on",
+      ]);
+    } catch { /* non-fatal */ }
 
     this.paneMap.set(name, paneId);
     return paneId;
@@ -1004,7 +952,24 @@ export class TmuxManager {
    * Kill a specific pane
    */
   async killPane(processName: string): Promise<void> {
-    const paneId = this.paneMap.get(processName);
+    let paneId = this.paneMap.get(processName);
+
+    // If not in paneMap, search by pane title (for cross-process cleanup)
+    if (!paneId) {
+      try {
+        const { stdout } = await execFileAsync("tmux", [
+          "list-panes", "-t", this.sessionName, "-s", "-F", "#{pane_id}:#{pane_title}",
+        ]);
+        for (const line of stdout.trim().split("\n")) {
+          const [id, title] = line.split(":");
+          if (title === processName) {
+            paneId = id;
+            break;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
     if (!paneId) return;
 
     try {
@@ -1014,14 +979,6 @@ export class TmuxManager {
     }
 
     this.paneMap.delete(processName);
-  }
-
-  /**
-   * Send keys to a pane (for commands or signals)
-   */
-  async sendKeys(paneIdOrName: string, keys: string): Promise<void> {
-    const paneId = this.paneMap.get(paneIdOrName) ?? paneIdOrName;
-    await execFileAsync("tmux", ["send-keys", "-t", paneId, keys, "Enter"]);
   }
 
   /**
@@ -1152,8 +1109,8 @@ export class TmuxManager {
         "sh", "-c", fullCommand,
       ]);
     } catch {
-      // If respawn fails, send keys instead
-      await this.sendKeys(paneId, fullCommand);
+      // If respawn fails, send command via send-keys instead
+      await execFileAsync("tmux", ["send-keys", "-t", paneId, fullCommand, "Enter"]);
     }
   }
 

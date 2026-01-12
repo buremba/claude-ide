@@ -149,6 +149,12 @@ export class InteractionManager extends EventEmitter {
       return templatePath;
     }
 
+    // Try ink-runner bundled components (dist/ink-runner/components/)
+    const inkRunnerPath = path.join(__dirname, "ink-runner", "components", normalizedPath);
+    if (fs.existsSync(inkRunnerPath)) {
+      return inkRunnerPath;
+    }
+
     // Fallback to project path (will error if not found)
     return projectPath;
   }
@@ -206,14 +212,14 @@ export class InteractionManager extends EventEmitter {
       throw new Error("Either schema, inkFile, or command is required");
     }
 
-    // Smart default: .termos/interactive/* and schema forms are ephemeral
-    // Shell commands are persistent (user may want to see output)
-    const isInteractiveComponent = options.inkFile?.includes('.termos/interactive/') ||
-                                   options.inkFile?.includes('.termos\\interactive\\');
-    const ephemeral = !!(isInteractiveComponent || options.schema);
+    // Ephemeral: ink components and schema forms auto-close when done
+    // Persistent: shell commands (-- <cmd>) stay visible for output review
+    const ephemeral = !!(options.inkFile || options.schema);
 
     const paneId = await this.tmuxManager.createPane(id, command, process.cwd(), env, {
       targetWindow: 0,  // Show in Canvas
+      ephemeral,        // Auto-close pane when done
+      setTitle: true,   // Set pane title to ID for cross-process cleanup
     });
 
     const state: InteractionState = {
@@ -388,10 +394,20 @@ export class InteractionManager extends EventEmitter {
         return;
       }
 
-      // Check if pane still exists
-      const paneExists = await this.tmuxManager.paneExists(id);
-      if (!paneExists) {
-        // Pane was closed/died without result = treat as cancel
+      // Check if pane is dead (crashed/exited without result)
+      const paneStatus = await this.tmuxManager.getPaneStatus(id);
+      if (!paneStatus) {
+        // Pane doesn't exist at all (shouldn't happen with remain-on-exit: on)
+        state.status = "cancelled";
+        state.result = { action: "cancel" };
+        this.stopPolling(id);
+        this.interactions.delete(id);
+        this.emit("interactionComplete", id, state.result);
+        return;
+      }
+      if (paneStatus.isDead) {
+        // Pane died without result = failure
+        // Leave pane visible so user can read the error
         state.status = "cancelled";
         state.result = { action: "cancel" };
         this.stopPolling(id);

@@ -2,28 +2,20 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import { ZodError } from "zod";
-import { loadConfig, configExists, expandEnvVars } from "./config.js";
+import { loadConfig, configExists, expandEnvVars, type Config } from "./config.js";
 import { ProcessManager } from "./process-manager.js";
-import { TmuxManager, listIdeSessions, isInsideTmux, cleanupStaleSession } from "./tmux-manager.js";
+import { TmuxManager, listIdeSessions, cleanupStaleSession } from "./tmux-manager.js";
 import { InteractionManager, type InteractionResult } from "./interaction-manager.js";
 import { emitReloadEvent, emitStatusEvent, getLatestStatus } from "./events.js";
-import { parseFormSchema, type FormSchema } from "@termosdev/shared";
+import { generateFullHelp } from "@termosdev/shared";
 
 function formatError(err: unknown): string {
   if (err instanceof ZodError) {
     return err.issues.map(i => i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message).join("\n");
   }
   return err instanceof Error ? err.message : String(err);
-}
-
-/** Read from stdin if piped */
-async function readStdin(): Promise<string | null> {
-  if (process.stdin.isTTY) return null;
-  const chunks: string[] = [];
-  process.stdin.setEncoding("utf8");
-  for await (const chunk of process.stdin) chunks.push(chunk);
-  return chunks.join("") || null;
 }
 
 async function loadConfigAndTmux(): Promise<{
@@ -51,6 +43,10 @@ function formatAge(date: Date): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+function showRunHelp(): void {
+  console.log(generateFullHelp());
+}
+
 function showHelp(): void {
   console.log(`
 termos - Interactive Development Environment for Claude Code
@@ -72,26 +68,24 @@ Usage:
 
   termos pane <name> <cmd>      Create a terminal pane
   termos rm <name>              Remove a pane
-  termos send <pane> <keys>     Send keys to a pane
 
   termos status "msg"           Set LLM status (shown in welcome page + tmux title)
   termos status "msg" --prompt "suggestion"  Set status with suggested prompts
   termos status --clear         Clear status
   termos status                 Show current status
 
-  termos ask                    Ask user questions (schema from stdin)
-  termos run <file.tsx>         Run an Ink component
+  termos run <component>        Run an Ink component (built-in or custom .tsx)
   termos run -- <command>       Run a shell command in Canvas
+
+Built-in components: ask, confirm, checklist, code, diff, table, progress, mermaid, markdown
+
+  Run 'termos run --help' for detailed component documentation and schemas.
 
 Options:
   -d, --detach    Run in background (don't attach)
   --stream        Stream events continuously (requires run_in_background)
   --json          Output as JSON (auto-enabled when no TTY)
   -h, --help      Show this help
-
-Agent Usage:
-  echo '{"questions":[...]}' | termos ask   # Ask user questions
-  termos run component.tsx --prompt "Hi"    # Run with args
 `);
 }
 
@@ -143,12 +137,13 @@ async function main() {
     // Only stream if explicitly requested with --stream (requires run_in_background)
     const stream = args.includes("--stream") && !detach;
 
-    if (!configExists()) {
-      console.error(json ? JSON.stringify({ error: "No termos.yaml" }) : "No termos.yaml found");
-      process.exit(1);
-    }
-
-    const { config: loaded, tmux } = await loadConfigAndTmux();
+    // Load config if exists, otherwise use empty default
+    const { config: loaded, tmux } = configExists()
+      ? await loadConfigAndTmux()
+      : {
+          config: { configDir: process.cwd(), config: {} as Config },
+          tmux: TmuxManager.createOwned(path.basename(process.cwd())),
+        };
     const sessionExists = await tmux.sessionExists();
 
     if (!sessionExists) {
@@ -177,8 +172,6 @@ async function main() {
           session: tmux.sessionName,
           status: ready.length === services.length ? "ready" : "starting",
           services: services.map(s => ({ name: s.name, status: s.status ?? "unknown", port: s.port })),
-          eventsFile: tmux.getEventsFile(),
-          logsDir: tmux.getLogDir(),
         });
       }
       const lines = [`Session: ${tmux.sessionName}`, `Status: ${ready.length}/${services.length} ready`, ""];
@@ -220,7 +213,7 @@ async function main() {
     }
 
     if (!allReady && !stream) {
-      // Exit on timeout unless streaming (streaming continues regardless)
+      // Exit on timeout unless streaming
       console.log(formatStatus());
       process.exit(1);
     }
@@ -259,7 +252,16 @@ async function main() {
               fs.readSync(fd, buffer, 0, buffer.length, lastSize);
               fs.closeSync(fd);
               for (const line of buffer.toString().split("\n")) {
-                if (line.trim()) console.log(line);
+                if (line.trim()) {
+                  console.log(line);
+                  // Auto-cleanup successful interaction panes
+                  try {
+                    const event = JSON.parse(line);
+                    if (event.type === "result" && event.action === "accept" && event.id) {
+                      tmux.killPane(event.id).catch(() => { /* ignore */ });
+                    }
+                  } catch { /* ignore parse errors */ }
+                }
               }
               lastSize = stat.size;
             }
@@ -278,13 +280,6 @@ async function main() {
 
       // Default: output status and exit (safe for agents without run_in_background)
       process.exit(hasCrashed ? 1 : 0);
-    }
-
-    if (isInsideTmux()) {
-      const embedded = await TmuxManager.createEmbedded();
-      await embedded.createPane("termos-view", `TMUX= tmux attach -t ${tmux.sessionName}`, process.cwd(), undefined, { direction: "auto", skipRebalance: true });
-      console.log(`Opened in split pane`);
-      process.exit(0);
     }
 
     process.exit(await tmux.attach());
@@ -342,7 +337,16 @@ async function main() {
               fs.readSync(fd, buffer, 0, buffer.length, lastSize);
               fs.closeSync(fd);
               for (const line of buffer.toString().split("\n")) {
-                if (line.trim()) console.log(line);
+                if (line.trim()) {
+                  console.log(line);
+                  // Auto-cleanup successful interaction panes
+                  try {
+                    const event = JSON.parse(line);
+                    if (event.type === "result" && event.action === "accept" && event.id) {
+                      tmux.killPane(event.id).catch(() => { /* ignore */ });
+                    }
+                  } catch { /* ignore parse errors */ }
+                }
               }
               lastSize = stat.size;
             }
@@ -362,15 +366,7 @@ async function main() {
       // Default: output status JSON and exit (safe for agents)
       console.log(JSON.stringify({
         session: tmux.sessionName,
-        eventsFile: tmux.getEventsFile(),
       }));
-      process.exit(0);
-    }
-
-    if (isInsideTmux()) {
-      const embedded = await TmuxManager.createEmbedded();
-      await embedded.createPane("termos-view", `TMUX= tmux attach -t ${tmux.sessionName}`, process.cwd(), undefined, { direction: "auto", skipRebalance: true });
-      console.log(`Opened in split pane`);
       process.exit(0);
     }
 
@@ -379,23 +375,33 @@ async function main() {
   }
 
   // Commands that require active session
-  if (!configExists()) {
-    console.error("No termos.yaml found");
-    process.exit(1);
-  }
-
   let loaded: Awaited<ReturnType<typeof loadConfigAndTmux>>["config"];
   let tmux: TmuxManager;
-  try {
-    const result = await loadConfigAndTmux();
-    loaded = result.config;
-    tmux = result.tmux;
-  } catch (err) {
-    if (cmd === "reload") {
-      console.error(`Reload failed: ${formatError(err)}`);
-      process.exit(1);
+  if (configExists()) {
+    try {
+      const result = await loadConfigAndTmux();
+      loaded = result.config;
+      tmux = result.tmux;
+    } catch (err) {
+      if (cmd === "reload") {
+        console.error(`Reload failed: ${formatError(err)}`);
+        process.exit(1);
+      }
+      throw err;
     }
-    throw err;
+  } else {
+    // No config - use default empty config
+    loaded = { configDir: process.cwd(), config: {} as Config };
+    tmux = TmuxManager.createOwned(path.basename(process.cwd()));
+  }
+
+  // Handle run --help before session check (doesn't need active session)
+  if (cmd === "run") {
+    const runArgs = args.slice(1);
+    if (runArgs.includes("--help") || runArgs.includes("-h") || runArgs.length === 0) {
+      showRunHelp();
+      process.exit(0);
+    }
   }
 
   if (!(await tmux.sessionExists())) {
@@ -470,15 +476,6 @@ async function main() {
     process.exit(0);
   }
 
-  // send
-  if (cmd === "send") {
-    const [, pane, ...keys] = args;
-    if (!pane || keys.length === 0) { console.error("Usage: termos send <pane> <keys>"); process.exit(1); }
-    await tmux.sendKeys(pane, keys.join(" "));
-    console.log(`Sent keys to ${pane}`);
-    process.exit(0);
-  }
-
   // status - set/get LLM status with optional prompts
   if (cmd === "status") {
     const clearIdx = args.indexOf("--clear");
@@ -528,52 +525,142 @@ async function main() {
     process.exit(0);
   }
 
-  // ask - read schema from stdin, display form, return results
-  if (cmd === "ask") {
-    const titleIdx = args.indexOf("--title");
-    const title = titleIdx > 0 ? args[titleIdx + 1] : undefined;
-    const stdinData = await readStdin();
-    if (!stdinData) {
-      console.error("Usage: echo '{\"questions\":[{\"question\":\"...\",\"header\":\"key\"}]}' | termos ask");
-      process.exit(1);
-    }
-
-    let schema: FormSchema;
-    try {
-      schema = parseFormSchema(JSON.parse(stdinData.trim()));
-    } catch (err) {
-      console.error("Invalid schema:", err instanceof Error ? err.message : String(err));
-      process.exit(1);
-    }
-
-    const im = new InteractionManager({ tmuxManager: tmux, cwd: loaded.configDir, configDir: loaded.configDir });
-    const id = await im.create({ schema, title, timeoutMs: 300000 });
-    const result = await new Promise<InteractionResult>(r => im.on("interactionComplete", (i, res) => i === id && r(res)));
-    console.log(JSON.stringify(result));
-    process.exit(0);
-  }
-
   // run
   if (cmd === "run") {
     const restArgs = args.slice(1);
     const wait = restArgs[0] === "--wait" ? (restArgs.shift(), true) : false;
+
+
     const sepIdx = restArgs.indexOf("--");
 
     let inkFile: string | undefined;
     let inkArgs: Record<string, string> | undefined;
     let command: string | undefined;
 
+    // Built-in components (resolve from ink-runner/components)
+    const builtinComponents: Record<string, string> = {
+      "markdown": "markdown.tsx",
+      "markdown.tsx": "markdown.tsx",
+      "plan-viewer": "plan-viewer.tsx",
+      "plan-viewer.tsx": "plan-viewer.tsx",
+      "welcome": "welcome.tsx",
+      "welcome.tsx": "welcome.tsx",
+      "confirm": "confirm.tsx",
+      "confirm.tsx": "confirm.tsx",
+      "checklist": "checklist.tsx",
+      "checklist.tsx": "checklist.tsx",
+      "code": "code.tsx",
+      "code.tsx": "code.tsx",
+      "diff": "diff.tsx",
+      "diff.tsx": "diff.tsx",
+      "table": "table.tsx",
+      "table.tsx": "table.tsx",
+      "progress": "progress.tsx",
+      "progress.tsx": "progress.tsx",
+      "mermaid": "mermaid.tsx",
+      "mermaid.tsx": "mermaid.tsx",
+    };
+
+    // Special handling for `ask` - uses SchemaForm directly instead of a component file
+    const component = restArgs[0]?.toLowerCase();
+    if (component === "ask") {
+      // Parse args to get --questions or --file
+      const cmdArgs: Record<string, string> = {};
+      for (let i = 1; i < restArgs.length; i++) {
+        const arg = restArgs[i];
+        if (arg.startsWith("--")) {
+          const key = arg.slice(2);
+          const eqIdx = key.indexOf("=");
+          if (eqIdx > 0) cmdArgs[key.slice(0, eqIdx)] = key.slice(eqIdx + 1);
+          else if (restArgs[i + 1]?.charAt(0) !== "-") cmdArgs[key] = restArgs[++i];
+        }
+      }
+
+      // Support --file to read questions from JSON file (avoids shell escaping issues)
+      let questionsArg = cmdArgs["questions"];
+      if (!questionsArg && cmdArgs["file"]) {
+        try {
+          questionsArg = fs.readFileSync(cmdArgs["file"], "utf-8");
+        } catch (err) {
+          console.error(`Error: Could not read file: ${cmdArgs["file"]}`);
+          process.exit(1);
+        }
+      }
+
+      if (!questionsArg) {
+        console.error("Error: --questions or --file is required for ask component");
+        console.error("Usage: termos run ask --questions '<json>'");
+        console.error("       termos run ask --file /path/to/questions.json");
+        process.exit(1);
+      }
+
+      let schema;
+      try {
+        const parsed = JSON.parse(questionsArg);
+        schema = Array.isArray(parsed) ? { questions: parsed } : parsed;
+      } catch {
+        console.error("Error: Invalid JSON in --questions or --file");
+        process.exit(1);
+      }
+
+      const im = new InteractionManager({ tmuxManager: tmux, cwd: loaded.configDir, configDir: loaded.configDir });
+      const id = await im.create({ schema, title: cmdArgs["title"], timeoutMs: wait ? 300000 : 0 });
+
+      // Async by default - return immediately with ID
+      if (!wait) {
+        console.log(JSON.stringify({ id, status: "started" }));
+        process.exit(0);
+      }
+
+      const result = await new Promise<InteractionResult>(resolve => {
+        im.on("interactionComplete", (iid: string, r: InteractionResult) => { if (iid === id) resolve(r); });
+      });
+      console.log(JSON.stringify(result));
+      process.exit(0);
+    }
+
     if (sepIdx !== -1) {
       command = restArgs.slice(sepIdx + 1).join(" ");
       if (!command) { console.error("Usage: termos run -- <command>"); process.exit(1); }
     } else {
       inkFile = restArgs[0];
-      if (!inkFile?.endsWith(".tsx") && !inkFile?.endsWith(".jsx")) {
-        console.error("Usage: termos run <file.tsx> or termos run -- <command>");
+
+      // Check if it's a built-in component
+      const builtinFile = builtinComponents[inkFile?.toLowerCase() ?? ""];
+      if (builtinFile) {
+        // Resolve to bundled component path
+        // In dist: dist/ink-runner/components/
+        // In dev: packages/ink-runner/components/
+        const distPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "ink-runner", "components", builtinFile);
+        const devPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "packages", "ink-runner", "components", builtinFile);
+        inkFile = fs.existsSync(distPath) ? distPath : devPath;
+      } else if (!inkFile?.endsWith(".tsx") && !inkFile?.endsWith(".jsx")) {
+        console.error("Usage: termos run <component> or termos run -- <command>");
+        console.error("\nBuilt-in components:");
+        console.error("  ask, confirm, checklist, code, diff, table, progress, mermaid");
+        console.error("  markdown, plan-viewer, welcome");
+        console.error("\nExamples:");
+        console.error("  termos run ask --questions '{\"questions\":[...]}'");
+        console.error("  termos run confirm --prompt 'Continue?'");
         process.exit(1);
       }
       // Parse --key value, --key=value, or --arg key=value
       inkArgs = {};
+
+      // Support positional arguments for specific components (LLM-friendly)
+      // e.g., `termos run confirm "Are you sure?"` → --prompt "Are you sure?"
+      const positionalArgMap: Record<string, string> = {
+        "confirm": "prompt",
+        "confirm.tsx": "prompt",
+        "checklist": "items",
+        "checklist.tsx": "items",
+        "progress": "steps",
+        "progress.tsx": "steps",
+        "markdown": "content",
+        "markdown.tsx": "content",
+      };
+      const positionalKey = positionalArgMap[component ?? ""];
+
       for (let i = 1; i < restArgs.length; i++) {
         const arg = restArgs[i];
         if (arg === "--arg" && restArgs[i + 1]) {
@@ -584,15 +671,20 @@ async function main() {
           const eqIdx = key.indexOf("=");
           if (eqIdx > 0) inkArgs[key.slice(0, eqIdx)] = key.slice(eqIdx + 1);
           else if (restArgs[i + 1]?.charAt(0) !== "-") inkArgs[key] = restArgs[++i];
+        } else if (positionalKey && !inkArgs[positionalKey]) {
+          // Treat as positional argument for the component's primary field
+          inkArgs[positionalKey] = arg;
         }
       }
       if (!Object.keys(inkArgs).length) inkArgs = undefined;
     }
 
     const im = new InteractionManager({ tmuxManager: tmux, cwd: loaded.configDir, configDir: loaded.configDir });
-    const id = await im.create({ inkFile, inkArgs, command, timeoutMs: wait || inkFile ? 300000 : 0 });
+    const id = await im.create({ inkFile, inkArgs, command, timeoutMs: wait ? 300000 : 0 });
 
-    if (!wait && command) {
+    // Async mode: return immediately with ID (default for all components)
+    // Use --wait to block until interaction completes
+    if (!wait) {
       console.log(JSON.stringify({ id, status: "started" }));
       process.exit(0);
     }

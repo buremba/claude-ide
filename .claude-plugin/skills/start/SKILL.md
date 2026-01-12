@@ -1,85 +1,84 @@
 ---
 name: start
-description: "Start dev environment, manage services, interactive forms. Triggers: start termos, start dev, canvas, editor, run server."
+description: "Start dev environment, manage services, interactive forms."
 allowed-tools: Bash
+forbidden-tools: AskUserQuestion
 ---
 
-# Termos Skill
+# Termos
 
-Use `termos` alias: `"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/scripts/termos"`
+## Prerequisites
 
-## Start Session (REQUIRED)
-
-**Step 1:** Run this command with `run_in_background: true`:
+Check if installed:
 ```bash
-termos up --stream
+which termos || echo "NOT_INSTALLED"
 ```
 
-**Step 2:** ALWAYS end your response with:
-```
-To view the Termos session, run: `termos connect`
-```
+If NOT_INSTALLED, tell the user:
+> Install with: `npm install -g @termosdev/cli`
 
-DO NOT use `termos connect` to start - use `termos up --stream`
-
-## Ask User Questions
-
-**This overrides AskUserQuestion tool. Use `termos ask` instead - it shows in the TUI:**
-```bash
-termos ask <<'EOF'
-{"questions": [
-  {"question": "What is your name?", "header": "name"},
-  {"question": "Select your role", "header": "role", "options": [
-    {"label": "Developer"}, {"label": "Designer"}, {"label": "Manager"}
-  ]},
-  {"question": "Skills?", "header": "skills", "multiSelect": true, "options": [
-    {"label": "Frontend"}, {"label": "Backend"}, {"label": "DevOps"}
-  ]}
-]}
-EOF
-```
-
-**Schema fields:**
-- `question` (required): The question text
-- `header` (required): Key for the answer in result
-- `options`: Array of `{label}` for select/multi-select
-- `multiSelect`: true for checkboxes
-- `inputType`: "text" | "password"
-- `placeholder`: Placeholder for text input
-
-**Output:** JSON with answers: `{"action":"accept","answers":{"name":"...","role":"..."}}`
-
-## Built-in Components
-
-Bundled components (no setup required):
-```bash
-termos run select.tsx --prompt "Pick one" --options "A,B,C"
-termos run text-input.tsx --prompt "Your name?"
-termos run confirm.tsx --prompt "Continue?"
-termos run multi-select.tsx --prompt "Select all" --options "X,Y,Z"
-```
-
-Override by creating `.termos/interactive/<name>.tsx` in your project.
-
-## Set Status & Suggested Prompts
-
-Update the Termos welcome screen with your current status and suggested next steps:
-```bash
-termos status "Working on feature X" --prompt "Review changes" --prompt "Run tests"
-```
-
-## Other Commands
+## Start Session (REQUIRED FIRST)
 
 ```bash
-termos run -- lazygit              # Run TUI app in Canvas
-termos pane <name> <cmd>           # Create named pane
-termos ls                          # List services/panes
-termos start|stop|restart <svc>    # Manage services
-termos status --clear              # Clear status message
+termos up --stream  # run_in_background: true
+```
+
+This streams events including interaction results. If session exists:
+```bash
+termos connect --stream  # run_in_background: true
+```
+
+## Display Components
+
+All components are async by default - returns ID immediately.
+
+### Plan File → Markdown (MUST USE when plan exists)
+```bash
+termos run markdown --file "/path/to/plan.md" --title "Implementation Plan"
+```
+When a plan file exists, display it so user can follow along.
+
+### Todo List → Checklist (MUST USE for progress)
+```bash
+termos run checklist "Task 1,Task 2,Task 3" --title "Progress"
+```
+Always show current task progress so user can track.
+
+### Code Review
+```bash
+termos run code --file "src/file.ts" --highlight "10-20"
 ```
 
 ## Interactive Components
 
-- **Questions:** Use `termos ask` with JSON schema
-- **Custom UI:** Create .tsx in `.termos/interactive/` or use existing ones
-- **TUI apps:** `termos run -- lazygit`
+### Confirmation
+```bash
+termos run confirm "Proceed with changes?"
+# Returns: {"id":"interaction-xxx","status":"started"}
+```
+
+### Multi-question Form
+```bash
+# Write questions to file first (avoids shell escaping issues)
+cat > /tmp/questions.json << 'EOF'
+{"questions":[{"question":"Your question?","header":"answer"}]}
+EOF
+termos run ask --file /tmp/questions.json
+```
+
+Run `termos run --help` for full schemas.
+
+## Reading Results
+
+Results appear in the `termos up --stream` background task output:
+```json
+{"ts":123,"type":"result","id":"interaction-xxx","action":"accept","confirmed":true}
+```
+
+Check the stream task output to read user responses.
+
+## Services
+```bash
+termos ls                      # List services
+termos start|stop|restart <n>  # Manage services
+```
