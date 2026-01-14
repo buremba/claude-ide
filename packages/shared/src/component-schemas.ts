@@ -253,6 +253,7 @@ Usage:
   termos run --help                   Show this help
 
 Global Options:
+  --session <name>            Session name (required outside Zellij; overrides TERMOS_SESSION_NAME)
   --title "Text"              Display a title header above the component
   --wait                      Wait for component to complete (optional)
   --no-wait                   Return immediately with interaction ID (default)

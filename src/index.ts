@@ -24,14 +24,15 @@ function showHelp(): void {
 termos - Interactive UI runner for Claude Code (Zellij, Ghostty, or macOS Terminal)
 
 Usage:
-  termos up                   Stream events (long-running)
+  termos up [--session <name>]                   Stream events (long-running)
 
-  termos run <component>      Run an Ink component (built-in or custom .tsx)
-  termos run -- <command>     Run a shell command in a floating pane
+  termos run [--session <name>] <component>      Run an Ink component (built-in or custom .tsx)
+  termos run [--session <name>] -- <command>     Run a shell command in a floating pane
 
 Built-in components: ask, confirm, checklist, code, diff, table, progress, mermaid, markdown, plan-viewer
 
 Options:
+  --session <name>  Session name (required outside Zellij; overrides TERMOS_SESSION_NAME)
   --width/--height/--x/--y   Pane geometry (0-100). Defaults to 40x50 @ x=60,y=5 for built-ins.
                             Required for custom components and commands on Zellij.
                             Ignored in macOS Terminal mode.
@@ -39,16 +40,47 @@ Options:
 `);
 }
 
+function parseSessionArg(args: string[]): { sessionName?: string; rest: string[] } {
+  let sessionName: string | undefined;
+  const rest: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--session") {
+      const value = args[i + 1];
+      if (!value || value.startsWith("--")) {
+        console.error("Error: --session requires a value.");
+        process.exit(1);
+      }
+      sessionName = value;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--session=")) {
+      const value = arg.slice("--session=".length);
+      if (!value) {
+        console.error("Error: --session requires a value.");
+        process.exit(1);
+      }
+      sessionName = value;
+      continue;
+    }
+    rest.push(arg);
+  }
+  return { sessionName, rest };
+}
+
 async function handleUp(args: string[]): Promise<void> {
-  if (args.includes("--json")) {
+  const { sessionName, rest } = parseSessionArg(args);
+  if (rest.includes("--json")) {
     console.error("Error: --json is not supported. 'termos up' always streams.");
     process.exit(1);
   }
-  const host = selectPaneHost(process.cwd());
+  const host = selectPaneHost(process.cwd(), sessionName);
   const eventsFile = ensureEventsFile(host.sessionName);
 
   console.log("Termos up is running.");
   console.log("Streaming events for this session.");
+  console.log(`Session: ${host.sessionName}`);
   console.log("");
   console.log(generateFullHelp());
 
@@ -108,13 +140,14 @@ async function handleRun(args: string[]): Promise<void> {
     process.exit(0);
   }
 
+  const { sessionName, rest } = parseSessionArg(args);
   let width: string | undefined;
   let height: string | undefined;
   let x: string | undefined;
   let y: string | undefined;
-  const hasWait = args.includes("--wait");
-  const hasNoWait = args.includes("--no-wait");
-  const restArgs = args.filter(arg => arg !== "--wait" && arg !== "--no-wait");
+  const hasWait = rest.includes("--wait");
+  const hasNoWait = rest.includes("--no-wait");
+  const restArgs = rest.filter(arg => arg !== "--wait" && arg !== "--no-wait");
   const builtinComponents: Record<string, string> = {
     "markdown": "markdown.tsx",
     "markdown.tsx": "markdown.tsx",
@@ -196,7 +229,7 @@ async function handleRun(args: string[]): Promise<void> {
     if (y === undefined) y = DEFAULT_GEOMETRY.y;
   }
 
-  const host = selectPaneHost(process.cwd());
+  const host = selectPaneHost(process.cwd(), sessionName);
   const paneWidth = parsePercent(width, "width");
   const paneHeight = parsePercent(height, "height");
   const paneX = parsePercent(x, "x");

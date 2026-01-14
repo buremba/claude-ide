@@ -29,8 +29,8 @@ function buildShellCommand(command: string, env?: Record<string, string>): strin
   if (!env || Object.keys(env).length === 0) {
     return command;
   }
-  const envParts = Object.entries(env).map(([key, value]) => `${key}=${shellEscape(value)}`);
-  return `env ${envParts.join(" ")} ${command}`;
+  const envParts = Object.entries(env).map(([key, value]) => `export ${key}=${shellEscape(value)};`);
+  return `${envParts.join(" ")} ${command}`;
 }
 
 export async function runFloatingPane(
@@ -49,7 +49,8 @@ export async function runFloatingPane(
   if (options.y) args.push("--y", options.y);
 
   const shellCommand = buildShellCommand(command, env);
-  args.push("--", "sh", "-c", shellCommand);
+  const shell = process.env.SHELL || "sh";
+  args.push("--", shell, "-lc", shellCommand);
 
   await execFileAsync("zellij", args);
 }

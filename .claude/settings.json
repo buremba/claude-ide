@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\".claude-plugin/scripts/termos\" run ask *)",
+      "Bash(\".claude-plugin/scripts/termos\" run confirm *)",
+      "Bash(\".claude-plugin/scripts/termos\" run checklist *)",
+      "Bash(\".claude-plugin/scripts/termos\" run code *)",
+      "Bash(\".claude-plugin/scripts/termos\" run diff *)",
+      "Bash(\".claude-plugin/scripts/termos\" run table *)",
+      "Bash(\".claude-plugin/scripts/termos\" run progress *)",
+      "Bash(\".claude-plugin/scripts/termos\" run mermaid *)",
+      "Bash(\".claude-plugin/scripts/termos\" run markdown *)",
+      "Bash(\".claude-plugin/scripts/termos\" run welcome *)",
+      "Bash(\".claude-plugin/scripts/termos\" run plan-viewer *)",
+      "Bash(\".claude-plugin/scripts/termos\" up *)",
+      "Bash(\".claude-plugin/scripts/termos\" down)",
+      "Bash(\".claude-plugin/scripts/termos\" status *)",
+      "Bash(\".claude-plugin/scripts/termos\" ls)",
+      "Bash(\".claude-plugin/scripts/termos\" connect *)"
+    ]
+  }
+}

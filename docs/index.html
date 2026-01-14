@@ -3,32 +3,255 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Termos Demo</title>
+    <title>Termos - Bidirectional CLI Interactivity for Agents</title>
     <link
       rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/asciinema-player@3.0.1/dist/bundle/asciinema-player.css"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Sora:wght@400;500;600;700&display=swap"
     />
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      html, body {
-        height: 100%;
-        margin: 0;
-        background: #0b0f14;
+      body {
+        font-family: "Sora", system-ui, sans-serif;
+        background: radial-gradient(1200px 800px at 10% 10%, rgba(56, 189, 248, 0.15), transparent 55%),
+          radial-gradient(900px 700px at 85% 15%, rgba(251, 191, 36, 0.18), transparent 55%),
+          linear-gradient(160deg, #0b1118, #0d1b24 55%, #0e2430);
       }
 
-      #player {
-        width: 100%;
-        height: 100%;
+      .font-mono {
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      .bg-grid::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        background-size: 48px 48px;
+        opacity: 0.25;
+        pointer-events: none;
+        z-index: -1;
       }
     </style>
   </head>
-  <body>
-    <div id="player"></div>
-    <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.0.1/dist/bundle/asciinema-player.min.js"></script>
+  <body class="min-h-screen text-slate-100">
+    <div class="bg-grid"></div>
+    <div class="mx-auto w-full max-w-6xl px-8 pb-24 pt-12">
+      <nav class="flex items-center justify-between">
+        <div class="flex items-center gap-3 font-semibold tracking-wide">
+          <div
+            class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-300 to-amber-300 text-slate-900"
+          >
+            <span class="font-mono text-base">T</span>
+          </div>
+          <span class="text-lg">Termos</span>
+        </div>
+        <a
+          class="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-300 transition hover:-translate-y-0.5 hover:border-cyan-300/50 hover:text-white"
+          href="https://github.com/buremba/claude-ide"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="See GitHub"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="h-5 w-5 fill-current">
+            <path
+              d="M12 2C6.48 2 2 6.58 2 12.26c0 4.54 2.87 8.39 6.84 9.75.5.1.68-.22.68-.49
+              0-.24-.01-1.03-.02-1.86-2.78.62-3.37-1.22-3.37-1.22-.46-1.19-1.11-1.5-1.11-1.5
+              -.91-.64.07-.63.07-.63 1 .08 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86
+              .09-.67.35-1.12.64-1.38-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.04 1.03-2.76
+              -.1-.26-.45-1.32.1-2.75 0 0 .84-.27 2.75 1.05.8-.23 1.65-.34 2.5-.34s1.7.12 2.5.34
+              c1.9-1.32 2.74-1.05 2.74-1.05.55 1.43.2 2.49.1 2.75.64.72 1.03 1.64 1.03 2.76
+              0 3.93-2.34 4.8-4.57 5.05.36.32.69.95.69 1.92 0 1.39-.02 2.51-.02 2.86
+              0 .27.18.59.69.49 3.97-1.36 6.83-5.21 6.83-9.75C22 6.58 17.52 2 12 2z"
+            />
+          </svg>
+          <span>See GitHub</span>
+        </a>
+      </nav>
+
+      <section class="mt-14 w-full">
+        <span class="inline-flex items-center rounded-full bg-white/10 px-4 py-2 font-mono text-xs text-slate-200">
+          Supports Zellij and any macOS terminal
+        </span>
+        <h1 class="mt-6 text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
+          Keep <span class="bg-gradient-to-r from-cyan-300 to-amber-200 bg-clip-text text-transparent">Claude Code</span>
+          interactive <br class="hidden sm:block" />while it works.
+        </h1>
+        <div class="mt-6 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <p class="text-lg leading-relaxed text-slate-300 lg:pr-6">
+            Termos keeps you engaged while Claude runs. <span class="font-mono">AskUserQuestion</span> blocks
+            today; Termos streams questions asynchronously, keeps Claude moving, and surfaces plans, proof,
+            and tests so you decide the next step without losing context.
+          </p>
+          <div class="relative space-y-3">
+            <span class="absolute left-4 top-0 h-full w-px bg-slate-700"></span>
+            <div class="relative flex gap-3 p-2">
+              <div class="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xs font-mono font-semibold text-slate-100">
+                1
+              </div>
+              <div class="flex-1 text-sm leading-relaxed text-slate-200">
+                Install the CLI and the Claude plugin.
+                <div
+                  class="relative mt-2 rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-xs font-mono text-slate-100"
+                  data-selectable
+                >
+                  <button
+                    class="absolute right-2 top-2 flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/5 px-2 py-0.5 text-[11px] text-slate-100 transition hover:-translate-y-0.5 hover:border-cyan-300/50"
+                    type="button"
+                    data-copy-target="install-snippet"
+                    aria-label="Copy install commands"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                      <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+                      <rect x="4" y="4" width="11" height="11" rx="2"></rect>
+                    </svg>
+                    Copy
+                  </button>
+                  <pre class="whitespace-pre-wrap"><code id="install-snippet">npm install -g @termosdev/cli
+claude plugins install termos</code></pre>
+                </div>
+              </div>
+            </div>
+            <div class="relative flex gap-3 p-2">
+              <div class="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xs font-mono font-semibold text-slate-100">
+                2
+              </div>
+              <div class="text-sm leading-relaxed text-slate-200">
+                Run <span class="font-mono">/termos:start</span> in Claude to start the session.
+              </div>
+            </div>
+            <div class="relative flex gap-3 p-2">
+              <div class="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xs font-mono font-semibold text-slate-100">
+                3
+              </div>
+              <div class="text-sm leading-relaxed text-slate-200">
+                Claude streams interactions with <span class="font-mono">termos up</span> and triggers
+                <span class="font-mono">termos run</span> for questions. Replies wake Claude immediately if
+                it is waiting, or are injected into context when the run finishes.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mt-16">
+        <div class="flex flex-wrap gap-3">
+          <button
+            class="video-tab rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-100 transition"
+            type="button"
+            data-video-tab="without"
+          >
+            Without Termos
+          </button>
+          <button
+            class="video-tab rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-300 transition hover:text-white"
+            type="button"
+            data-video-tab="terminal"
+          >
+            Termos in Terminal
+          </button>
+          <button
+            class="video-tab rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-300 transition hover:text-white"
+            type="button"
+            data-video-tab="macos"
+          >
+            Termos in macOS
+          </button>
+        </div>
+        <div class="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-2xl">
+          <video class="video-player w-full" controls muted autoplay playsinline preload="metadata">
+            <source src="recordings/screencast.mp4" type="video/mp4" />
+            Screencast goes here.
+          </video>
+        </div>
+      </section>
+
+      <section class="mt-16 grid gap-6 md:grid-cols-3">
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
+          <h3 class="text-lg font-semibold">Async questions</h3>
+          <p class="mt-2 text-sm leading-relaxed text-slate-300">
+            Claude can ask mid-run without blocking, and you answer when ready.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
+          <h3 class="text-lg font-semibold">Proof while it runs</h3>
+          <p class="mt-2 text-sm leading-relaxed text-slate-300">
+            Plans, diffs, and tests show up as evidence before the next step.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
+          <h3 class="text-lg font-semibold">Keep context</h3>
+          <p class="mt-2 text-sm leading-relaxed text-slate-300">
+            Short check-ins prevent drift so you stay synced with the agent.
+          </p>
+        </div>
+      </section>
+
+      <footer class="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-8 text-sm text-slate-400">
+        <div>Made for more interactive agentic environments.</div>
+        <div>Made with love by @bu7emba</div>
+      </footer>
+    </div>
+
     <script>
-      AsciinemaPlayer.create("recordings/termos.cast", document.getElementById("player"), {
-        autoPlay: false,
-        loop: false,
-        fit: "both"
+      const selectCode = (block) => {
+        const code = block.querySelector("code");
+        if (!code) return;
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        const selection = window.getSelection();
+        if (!selection) return;
+        selection.removeAllRanges();
+        selection.addRange(range);
+      };
+
+      document.querySelectorAll("[data-selectable]").forEach((block) => {
+        block.addEventListener("click", (event) => {
+          if (event.target.closest("button")) return;
+          selectCode(block);
+        });
+      });
+
+      document.querySelectorAll("[data-copy-target]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const targetId = button.getAttribute("data-copy-target");
+          const code = targetId ? document.getElementById(targetId) : null;
+          if (!code) return;
+          const text = code.textContent ?? "";
+          selectCode(button.closest("[data-selectable]"));
+          try {
+            await navigator.clipboard.writeText(text);
+          } catch {
+            document.execCommand("copy");
+          }
+        });
+      });
+
+      const video = document.querySelector(".video-player");
+      const tabs = document.querySelectorAll(".video-tab");
+      const activeTabClass = "bg-white/10 text-slate-100";
+      const inactiveTabClass = "bg-white/5 text-slate-300";
+
+      const setTabState = (target) => {
+        tabs.forEach((tab) => {
+          if (tab === target) {
+            tab.classList.remove(...inactiveTabClass.split(" "));
+            tab.classList.add(...activeTabClass.split(" "));
+          } else {
+            tab.classList.remove(...activeTabClass.split(" "));
+            tab.classList.add(...inactiveTabClass.split(" "));
+          }
+        });
+      };
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          setTabState(tab);
+          if (video) {
+            video.currentTime = 0;
+            video.play().catch(() => {});
+          }
+        });
       });
     </script>
   </body>

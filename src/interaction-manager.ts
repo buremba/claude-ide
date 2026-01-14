@@ -212,20 +212,42 @@ export class InteractionManager extends EventEmitter {
       TERMOS_PID_FILE: pidFile,
     };
     const shellEscape = (s: string) => s.replace(/'/g, "'\\''");
+    const nodeBin = process.env.TERMOS_NODE || process.execPath || "node";
+    const nodeCmd = shellEscape(nodeBin);
     const pidPrefix = 'if [ -n "$TERMOS_PID_FILE" ]; then echo $$ > "$TERMOS_PID_FILE"; fi';
     const useExec = this.host.kind === "zellij";
 
     let command: string;
+    const sanitizeTitle = (value: string): string => value.replace(/[\r\n\t]+/g, " ").trim();
+    const truncateTitle = (value: string, max = 48): string => {
+      if (value.length <= max) return value;
+      return `${value.slice(0, Math.max(0, max - 3))}...`;
+    };
+    const getPaneName = (): string => {
+      const optionTitle = typeof options.title === "string" ? sanitizeTitle(options.title) : "";
+      if (optionTitle) return truncateTitle(optionTitle);
+      const argTitle = typeof options.inkArgs?.title === "string" ? sanitizeTitle(options.inkArgs.title) : "";
+      if (argTitle) return truncateTitle(argTitle);
+      const promptTitle = typeof options.inkArgs?.prompt === "string" ? sanitizeTitle(options.inkArgs.prompt) : "";
+      if (promptTitle) return truncateTitle(promptTitle);
+      const fileTitle = typeof options.inkArgs?.file === "string"
+        ? sanitizeTitle(path.basename(options.inkArgs.file))
+        : "";
+      if (fileTitle) return truncateTitle(fileTitle);
+      if (options.component) return truncateTitle(options.component);
+      if (options.command) return "command";
+      return id;
+    };
 
     if (options.inkFile) {
       const resolvedPath = this.resolveInkFile(options.inkFile);
       const execPrefix = useExec ? "exec " : "";
-      command = `${pidPrefix}; ${execPrefix}node "${this.inkRunnerPath}" --file '${shellEscape(resolvedPath)}'`;
+      command = `${pidPrefix}; ${execPrefix}${nodeCmd} "${this.inkRunnerPath}" --file '${shellEscape(resolvedPath)}'`;
       if (options.title) command += ` --title '${shellEscape(options.title)}'`;
       if (options.inkArgs) command += ` --args '${shellEscape(JSON.stringify(options.inkArgs))}'`;
     } else if (options.schema) {
       const execPrefix = useExec ? "exec " : "";
-      command = `${pidPrefix}; ${execPrefix}node "${this.inkRunnerPath}" --schema '${shellEscape(JSON.stringify(options.schema))}'`;
+      command = `${pidPrefix}; ${execPrefix}${nodeCmd} "${this.inkRunnerPath}" --schema '${shellEscape(JSON.stringify(options.schema))}'`;
       if (options.title) command += ` --title '${shellEscape(options.title)}'`;
     } else if (options.command) {
       // Wrap command to write result to events file on exit or signal
@@ -273,10 +295,11 @@ export class InteractionManager extends EventEmitter {
       }
     }
 
+    const paneName = getPaneName();
     await this.host.run(
       command,
       {
-        name: id,
+        name: paneName,
         cwd: this.cwd,
         width,
         height,

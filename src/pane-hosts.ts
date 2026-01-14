@@ -26,19 +26,22 @@ export interface PaneHost {
   close?(name?: string): Promise<void>;
 }
 
-function resolveSessionName(cwd: string, override?: string): { name: string; inZellij: boolean } {
+function resolveSessionName(
+  cwd: string,
+  override?: string
+): { name: string; inZellij: boolean; explicit: boolean } {
   const zellijName = process.env.ZELLIJ_SESSION_NAME;
   if (zellijName && zellijName.trim().length > 0) {
-    return { name: zellijName.trim(), inZellij: true };
+    return { name: zellijName.trim(), inZellij: true, explicit: false };
   }
 
   const explicit = override ?? process.env.TERMOS_SESSION_NAME;
   if (explicit && explicit.trim().length > 0) {
-    return { name: explicit.trim(), inZellij: false };
+    return { name: explicit.trim(), inZellij: false, explicit: true };
   }
 
   const base = path.basename(cwd || process.cwd()) || "session";
-  return { name: normalizeSessionName(base), inZellij: false };
+  return { name: normalizeSessionName(base), inZellij: false, explicit: false };
 }
 
 function shellEscape(value: string): string {
@@ -49,8 +52,8 @@ function buildShellCommand(command: string, env?: Record<string, string>): strin
   if (!env || Object.keys(env).length === 0) {
     return command;
   }
-  const envParts = Object.entries(env).map(([key, value]) => `${key}=${shellEscape(value)}`);
-  return `env ${envParts.join(" ")} ${command}`;
+  const envParts = Object.entries(env).map(([key, value]) => `export ${key}=${shellEscape(value)};`);
+  return `${envParts.join(" ")} ${command}`;
 }
 
 function escapeAppleScript(value: string): string {
@@ -155,6 +158,9 @@ function createMacTerminalHost(sessionName: string): PaneHost {
 
 export function selectPaneHost(cwd: string, sessionNameOverride?: string): PaneHost {
   const resolved = resolveSessionName(cwd, sessionNameOverride);
+  if (!resolved.inZellij && !resolved.explicit) {
+    throw new Error("Not in Zellij. Provide --session <name> or set TERMOS_SESSION_NAME.");
+  }
   if (resolved.inZellij) {
     return createZellijHost(resolved.name);
   }
