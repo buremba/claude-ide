@@ -116,7 +116,7 @@ function createMacTerminalHost(sessionName: string): PaneHost {
         tty = undefined;
       }
       const target = `termos:${name}`;
-      const script = [
+      const closeScript = [
         "tell application \"Terminal\"",
         "set closed to false",
         "repeat with w in windows",
@@ -161,10 +161,30 @@ function createMacTerminalHost(sessionName: string): PaneHost {
         "return \"not_closed\"",
         "end tell",
       ].join("\n");
+      let closed = false;
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        const { stdout } = await execFileAsync("osascript", ["-e", script]);
-        if (stdout.trim() === "closed") return;
+        const { stdout } = await execFileAsync("osascript", ["-e", closeScript]);
+        if (stdout.trim() === "closed") {
+          closed = true;
+          break;
+        }
         await sleep(200);
+      }
+      if (!closed) {
+        const message = "[termos] Pane closed. Please close this tab/window.";
+        const notifyScript = [
+          "tell application \"Terminal\"",
+          "repeat with w in windows",
+          "repeat with t in tabs of w",
+          ...(tty ? [`if (tty of t) contains \"${escapeAppleScript(tty)}\" then`] : [`if (name of t) contains \"${escapeAppleScript(target)}\" then`]),
+          `do script \"printf '\\\\n${escapeAppleScript(message)}\\\\n'\" in t`,
+          "return",
+          "end if",
+          "end repeat",
+          "end repeat",
+          "end tell",
+        ].join("\n");
+        await execFileAsync("osascript", ["-e", notifyScript]);
       }
     },
   };
