@@ -79,8 +79,29 @@ function createMacTerminalHost(sessionName: string): PaneHost {
       const name = options.name ?? "termos";
       const clearCommand = `printf '\\033[3J\\033[H\\033[2J'`;
       const titleCommand = `printf '\\033]0;termos:${name}\\007'`;
+      const closeScriptLines = [
+        "on run argv",
+        "set target to item 1 of argv",
+        "tell application \"Terminal\"",
+        "repeat with w in windows",
+        "repeat with t in tabs of w",
+        "if (tty of t) contains target then",
+        "close t",
+        "return",
+        "end if",
+        "end repeat",
+        "end repeat",
+        "end tell",
+        "end run",
+      ];
+      const osascriptArgs = closeScriptLines
+        .map(line => `-e \"${escapeAppleScript(line)}\"`)
+        .join(" ");
+      const closeTrap = options.closeOnExit
+        ? `__termos_close_tab() { __tty=$(tty); if [ -n \"$__tty\" ]; then osascript ${osascriptArgs} \"$__tty\" >/dev/null 2>&1; fi }; trap '__termos_close_tab' EXIT HUP INT TERM`
+        : "";
       const shellCommand = buildShellCommand(
-        `cd ${shellEscape(cwd)}; ${clearCommand}; ${titleCommand}; ${command}`,
+        `cd ${shellEscape(cwd)}; ${clearCommand}; ${titleCommand}; ${closeTrap}; ${command}`,
         env
       );
       const script = [
