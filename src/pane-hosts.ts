@@ -7,6 +7,8 @@ import { runFloatingPane } from "./zellij.js";
 
 const execFileAsync = promisify(execFile);
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export interface PaneRunOptions {
   name?: string;
   cwd?: string;
@@ -106,26 +108,54 @@ function createMacTerminalHost(sessionName: string): PaneHost {
       const target = `termos:${name}`;
       const script = [
         "tell application \"Terminal\"",
+        "set closed to false",
         "repeat with w in windows",
         "repeat with t in tabs of w",
-        ...(tty ? [`if (tty of t) is \"${escapeAppleScript(tty)}\" then`, "close t", "return", "end if"] : []),
+        ...(tty ? [
+          `if (tty of t) contains \"${escapeAppleScript(tty)}\" then`,
+          "close t",
+          "set closed to true",
+          "exit repeat",
+          "end if",
+        ] : []),
         "set tabTitle to \"\"",
         "try",
         "set tabTitle to custom title of t",
         "end try",
         `if tabTitle is \"${escapeAppleScript(target)}\" then`,
         "close t",
-        "return",
+        "set closed to true",
+        "exit repeat",
         "end if",
         `if (name of t) contains \"${escapeAppleScript(target)}\" then`,
         "close t",
-        "return",
+        "set closed to true",
+        "exit repeat",
         "end if",
         "end repeat",
+        "if closed then exit repeat",
         "end repeat",
+        "if not closed then",
+        "try",
+        "set w to front window",
+        "if (count of tabs of w) is 1 then",
+        "set t to first tab of w",
+        `if (name of t) contains \"${escapeAppleScript(target)}\" then`,
+        "close w",
+        "set closed to true",
+        "end if",
+        "end if",
+        "end try",
+        "end if",
+        "if closed then return \"closed\"",
+        "return \"not_closed\"",
         "end tell",
       ].join("\n");
-      await execFileAsync("osascript", ["-e", script]);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const { stdout } = await execFileAsync("osascript", ["-e", script]);
+        if (stdout.trim() === "closed") return;
+        await sleep(200);
+      }
     },
   };
   return host;
