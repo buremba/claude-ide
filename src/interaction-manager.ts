@@ -8,8 +8,8 @@ import {
   type FormSchema,
 } from "@termosdev/shared";
 import { findResultEvent } from "./events.js";
-import { getEventsFilePath } from "./tmux-manager.js";
-import type { TmuxManager } from "./tmux-manager.js";
+import { ensureEventsFile } from "./runtime.js";
+import { requireZellijSession, runFloatingPane } from "./zellij.js";
 
 // ESM compatibility for __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -23,7 +23,6 @@ export const INTERACTIVE_DIR = ".termos/interactive";
 
 export type InteractionStatus = "pending" | "completed" | "cancelled" | "timeout";
 export type InteractionAction = "accept" | "decline" | "cancel" | "timeout";
-
 export interface InteractionResult {
   action: InteractionAction;
   answers?: Record<string, string | string[]>;
@@ -41,58 +40,67 @@ export interface InteractionState {
 }
 
 export interface CreateInteractionOptions {
+  id?: string;
+  component?: string;
+  isCommand?: boolean;
   schema?: FormSchema;
   inkFile?: string;  // Path to custom Ink component file
   inkArgs?: Record<string, unknown>;  // Args to pass to ink component
   command?: string;  // Arbitrary command to run
   title?: string;
   timeoutMs?: number;
+  usePopup?: boolean;  // Kept for API compatibility (floating panes are always used)
+  width?: string;
+  height?: string;
+  x?: string;
+  y?: string;
 }
 
 interface InteractionManagerOptions {
-  tmuxManager: TmuxManager;
   inkRunnerPath?: string;
   pollIntervalMs?: number;
   cwd?: string;  // Project root directory for resolving ink_file paths
-  configDir?: string;  // Config directory for events file
+  sessionName?: string;
 }
 
 /**
- * Manages interactive form/component sessions in tmux panes
+ * Manages interactive form/component sessions in Zellij floating panes
  */
 export class InteractionManager extends EventEmitter {
   private interactions: Map<string, InteractionState> = new Map();
-  private tmuxManager: TmuxManager;
   private inkRunnerPath: string;
   private pollIntervalMs: number;
   private pollTimers: Map<string, NodeJS.Timeout> = new Map();
   private idCounter = 0;
   private cwd: string;
-  private configDir: string;
+  private sessionName: string;
 
   constructor(options: InteractionManagerOptions) {
     super();
-    this.tmuxManager = options.tmuxManager;
     this.pollIntervalMs = options.pollIntervalMs ?? 500;
     this.cwd = options.cwd ?? process.cwd();
-    this.configDir = options.configDir ?? process.cwd();
+    this.sessionName = options.sessionName ?? requireZellijSession();
 
     // Find runner path relative to this module
     this.inkRunnerPath = options.inkRunnerPath ?? this.findInkRunnerPath();
   }
 
+  generateId(): string {
+    return `interaction-${++this.idCounter}-${Date.now()}`;
+  }
+
   /**
    * Set the config directory (for events file)
    */
-  setConfigDir(configDir: string): void {
-    this.configDir = configDir;
+  setSessionName(sessionName: string): void {
+    this.sessionName = sessionName;
   }
 
   /**
    * Get the events file path
    */
   private getEventsFile(): string {
-    return getEventsFilePath(this.configDir);
+    return ensureEventsFile(this.sessionName);
   }
 
   /**
@@ -100,6 +108,10 @@ export class InteractionManager extends EventEmitter {
    */
   getInteractiveDir(): string {
     return path.join(this.cwd, INTERACTIVE_DIR);
+  }
+
+  getSessionName(): string {
+    return this.sessionName;
   }
 
   /**
@@ -188,7 +200,7 @@ export class InteractionManager extends EventEmitter {
    * Create a new interaction
    */
   async create(options: CreateInteractionOptions): Promise<string> {
-    const id = `interaction-${++this.idCounter}-${Date.now()}`;
+    const id = options.id ?? this.generateId();
     const eventsFile = this.getEventsFile();
     const env = buildInteractionEnv(id, eventsFile);
     const shellEscape = (s: string) => s.replace(/'/g, "'\\''");
@@ -204,10 +216,31 @@ export class InteractionManager extends EventEmitter {
       command = `node "${this.inkRunnerPath}" --schema '${shellEscape(JSON.stringify(options.schema))}'`;
       if (options.title) command += ` --title '${shellEscape(options.title)}'`;
     } else if (options.command) {
-      // Wrap command to write result to events file on exit
-      command = `${options.command}; code=$?; ` +
-        `if [ $code -eq 0 ]; then action=accept; else action=decline; fi; ` +
-        `echo '{"ts":'$(date +%s000)',"type":"result","id":"${id}","action":"'$action'","result":{"exitCode":'$code'}}' >> "${eventsFile}"`;
+      // Wrap command to write result to events file on exit or signal
+      const escapedEventsFile = shellEscape(eventsFile);
+      const escapedId = shellEscape(id);
+      command = [
+        `__events=${escapedEventsFile}`,
+        `__id=${escapedId}`,
+        "__sent=0",
+        "__emit() {",
+        "  action=$1",
+        "  result=$2",
+        "  if [ \"$__sent\" -eq 0 ]; then",
+        "    __sent=1",
+        "    if [ -n \"$result\" ]; then",
+        "      echo '{\"ts\":'$(date +%s000)',\"type\":\"result\",\"id\":\"'\"$__id\"'\",\"action\":\"'\"$action\"'\",\"result\":'\"$result\"'}' >> \"$__events\"",
+        "    else",
+        "      echo '{\"ts\":'$(date +%s000)',\"type\":\"result\",\"id\":\"'\"$__id\"'\",\"action\":\"'\"$action\"'\"}' >> \"$__events\"",
+        "    fi",
+        "  fi",
+        "}",
+        "trap '__emit cancel' EXIT INT TERM HUP",
+        options.command,
+        "code=$?",
+        "if [ $code -eq 0 ]; then __emit accept '{\"exitCode\":'$code'}'; else __emit decline '{\"exitCode\":'$code'}'; fi",
+        "trap - EXIT INT TERM HUP",
+      ].join("; ");
     } else {
       throw new Error("Either schema, inkFile, or command is required");
     }
@@ -216,19 +249,38 @@ export class InteractionManager extends EventEmitter {
     // Persistent: shell commands (-- <cmd>) stay visible for output review
     const ephemeral = !!(options.inkFile || options.schema);
 
-    const paneId = await this.tmuxManager.createPane(id, command, process.cwd(), env, {
-      targetWindow: 0,  // Show in Canvas
-      ephemeral,        // Auto-close pane when done
-      setTitle: true,   // Set pane title to ID for cross-process cleanup
-    });
+    const width = options.width;
+    const height = options.height;
+    const x = options.x;
+    const y = options.y;
+
+    if (width === undefined || height === undefined || x === undefined || y === undefined) {
+      throw new Error("Pane geometry required: --width --height --x --y (0-100).");
+    }
+
+    requireZellijSession();
+
+    await runFloatingPane(
+      command,
+      {
+        name: id,
+        cwd: process.cwd(),
+        width,
+        height,
+        x,
+        y,
+        closeOnExit: ephemeral,
+      },
+      env
+    );
 
     const state: InteractionState = {
       id,
-      paneId,
+      paneId: "floating",
       status: "pending",
       createdAt: new Date(),
       timeoutMs: options.timeoutMs,
-      ephemeral,  // Store for cleanup decision
+      ephemeral,
     };
 
     this.interactions.set(id, state);
@@ -314,16 +366,10 @@ export class InteractionManager extends EventEmitter {
     // Stop polling
     this.stopPolling(id);
 
-    // Kill the tmux pane
-    try {
-      await this.tmuxManager.killPane(id);
-    } catch {
-      // Pane might already be gone
-    }
-
     // Update state
     state.status = "cancelled";
     state.result = { action: "cancel" };
+    this.interactions.delete(id);
     this.emit("interactionComplete", id, state.result);
 
     return true;
@@ -339,13 +385,6 @@ export class InteractionManager extends EventEmitter {
     }
 
     this.stopPolling(id);
-
-    // Try to kill pane if it still exists
-    try {
-      await this.tmuxManager.killPane(id);
-    } catch {
-      // Pane might already be gone
-    }
 
     this.interactions.delete(id);
   }
@@ -375,7 +414,7 @@ export class InteractionManager extends EventEmitter {
       }
 
       // Check for result in events file
-      const resultEvent = findResultEvent(this.configDir, id);
+      const resultEvent = findResultEvent(this.sessionName, id);
       if (resultEvent) {
         state.status = "completed";
         state.result = {
@@ -384,34 +423,7 @@ export class InteractionManager extends EventEmitter {
           result: resultEvent.result,
         };
         this.stopPolling(id);
-        // Kill pane if ephemeral, otherwise leave it visible (dead but readable)
-        if (state.ephemeral) {
-          await this.cleanup(id);
-        } else {
-          this.interactions.delete(id);
-        }
-        this.emit("interactionComplete", id, state.result);
-        return;
-      }
-
-      // Check if pane is dead (crashed/exited without result)
-      const paneStatus = await this.tmuxManager.getPaneStatus(id);
-      if (!paneStatus) {
-        // Pane doesn't exist at all (shouldn't happen with remain-on-exit: on)
-        state.status = "cancelled";
-        state.result = { action: "cancel" };
-        this.stopPolling(id);
-        this.interactions.delete(id);
-        this.emit("interactionComplete", id, state.result);
-        return;
-      }
-      if (paneStatus.isDead) {
-        // Pane died without result = failure
-        // Leave pane visible so user can read the error
-        state.status = "cancelled";
-        state.result = { action: "cancel" };
-        this.stopPolling(id);
-        this.interactions.delete(id);
+        await this.cleanup(id);
         this.emit("interactionComplete", id, state.result);
         return;
       }

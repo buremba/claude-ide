@@ -2,14 +2,12 @@
 allowed-tools: Bash
 ---
 
-Start the Termos session.
+Start the Termos event stream for the current Zellij session (long-running).
 
-Run with `run_in_background: true`:
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/scripts/termos" up --stream
+termos up
 ```
 
-ALWAYS end your response with:
-```
-To view the Termos session, run: `termos connect`
-```
+Run this as a background/base process so it stays alive (do not use shell `&`).
+
+Keep this process running in a separate pane/tab or background job to receive interaction results. `termos run <component>` will display interactive UIs in a floating pane.

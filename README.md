@@ -1,6 +1,6 @@
 # termos
 
-Interactive Development Environment for Claude Code. Manage dev services, create terminal panes, show interactive forms.
+Interactive UI runner for Claude Code. Opens Ink-based components in Zellij floating panes and streams interaction results.
 
 ## Installation
 
@@ -8,96 +8,71 @@ Interactive Development Environment for Claude Code. Manage dev services, create
 npm install -g @termosdev/cli
 ```
 
+## Claude Install
+
+- Marketplace: install the Termos plugin from Claude’s plugin marketplace (if published).
+- Local dev: run Claude with `--plugin-dir .claude-plugin` from this repo.
+
+## Codex Skill Install
+
+Use Codex’s skill tools:
+
+- Repo‑scoped (no install): put the skill in `.codex/skills/termos` inside your repo.
+  ```bash
+  mkdir -p .codex/skills
+  ln -s ../../skills/termos .codex/skills/termos
+  ```
+- GitHub install (skill installer):
+  ```bash
+  python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
+    --repo <owner>/<repo> \
+    --path skills/termos \
+    --ref main
+  ```
+
+Restart Codex after installing.
+
+## Requirements
+
+- Zellij must be running. All Termos commands must be executed **inside a Zellij session**.
+- Pane geometry is required for custom components and commands. Built-ins default to
+  width 40, height 50, x 60, y 5 (top-right) when omitted.
+
 ## Quick Start
 
-1. Create `termos.yaml` in your project:
+1. Start or attach to a Zellij session:
 
-```yaml
-services:
-  api:
-    command: npm run dev
-    port: 3000
-
-  frontend:
-    command: npm run dev
-    cwd: ./frontend
+```bash
+zellij attach --create my-session
 ```
 
-2. Add to Claude Code MCP config (`~/.claude.json`):
+2. Start the Termos event stream (keep this running):
 
-```json
-{
-  "mcpServers": {
-    "termos": {
-      "command": "npx",
-      "args": ["-y", "@termosdev/cli"]
-    }
-  }
-}
+```bash
+termos up
 ```
 
-3. Ask Claude to manage your dev environment or use CLI directly.
+`termos up` streams interaction results.
+
+3. Run an interaction (in another pane/tab):
+
+```bash
+termos run confirm --prompt "Proceed?"
+```
+
+Defaults for built-ins: `--width 40 --height 50 --x 60 --y 5`.
 
 ## CLI Commands
 
 ```bash
-# Session management
-termos up                    # Start session and services
-termos down                  # Stop session and services
-termos attach                # Attach to tmux session
-termos sessions              # List active sessions
-
-# Service management (requires running session)
-termos ls                    # List services with status
-termos start <service>       # Start a service
-termos stop <service>        # Stop a service
-termos restart <service>     # Restart a service
-termos logs <name>           # Capture pane/service output
-
-# Panes and interaction
-termos pane <name> <cmd>     # Create terminal pane
-termos rm <name>             # Remove a pane
-termos ask <question>        # Ask user a question
-termos ink <file.tsx>        # Run custom Ink component
+termos up                   # Stream events for current session (long-running)
+termos run <component>       # Run a built-in or custom Ink component
+termos run -- <command>      # Run a shell command in a floating pane
 ```
 
-## Use Cases
+Built-in components: `ask`, `confirm`, `checklist`, `code`, `diff`, `table`, `progress`, `mermaid`, `markdown`, `plan-viewer`.
 
-| Use Case | CLI | MCP Tool |
-|----------|-----|----------|
-| Check service status | `termos ls` | `list_services` |
-| Start/stop services | `termos start api` | `manage_service` |
-| View logs | `termos logs api` | `capture_pane` |
-| Run one-off command | `termos pane build "npm run build"` | `create_pane` |
-| Ask user a question | `termos ask "Deploy?"` | `show_user_interaction` |
-| Custom Ink component | `termos ink picker.tsx` | `show_user_interaction` |
-
-## Service Configuration
-
-```yaml
-services:
-  api:
-    command: npm run dev       # Required: shell command
-    cwd: ./backend             # Working directory
-    port: 3000                 # Fixed port (injected as $PORT)
-    autoStart: true            # Start on boot (default: true)
-    env:                       # Environment variables
-      NODE_ENV: development
-    envFile: .env              # Load from .env file
-    restartPolicy: onFailure   # always | onFailure | never
-    healthCheck: /health       # HTTP health check path
-    dependsOn: db              # Wait for dependency
-```
-
-## Settings
-
-```yaml
-settings:
-  sessionName: myproject-$USER  # Custom session name (supports $ENV_VAR)
-  layout: grid                  # grid | horizontal | vertical | main-left | main-top
-  autoAttachTerminal: true      # Auto-open terminal window
-  terminalApp: auto             # auto | ghostty | iterm | kitty | terminal
-```
+Run `termos run --help` for detailed schemas and options.
 
 ## Interactive Forms
 

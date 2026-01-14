@@ -19,14 +19,63 @@ export default function Checklist() {
   const { stdout } = useStdout();
 
   const title = args?.title || 'Checklist';
-  const itemLabels = (args?.items || args?.options)?.split(',').map(s => s.trim()).filter(Boolean) || ['Item 1', 'Item 2', 'Item 3'];
+  const rawItems = args?.items || args?.options || '';
   const preChecked = new Set(
     args?.checked?.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)) || []
   );
 
-  const [items, setItems] = useState<Item[]>(
-    itemLabels.map((label, i) => ({ label, checked: preChecked.has(i) }))
+  const parseItems = (input: string): Item[] => {
+    const trimmed = input.trim();
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.map((entry) => {
+            if (typeof entry === 'string' || typeof entry === 'number') {
+              return { label: String(entry), checked: false };
+            }
+            if (entry && typeof entry === 'object') {
+              const obj = entry as Record<string, unknown>;
+              const label = typeof obj.label === 'string'
+                ? obj.label
+                : typeof obj.name === 'string'
+                  ? obj.name
+                  : typeof obj.title === 'string'
+                    ? obj.title
+                    : typeof obj.text === 'string'
+                      ? obj.text
+                      : JSON.stringify(obj);
+              const checked = Boolean(obj.checked ?? obj.completed ?? obj.selected);
+              return { label, checked };
+            }
+            return { label: String(entry), checked: false };
+          });
+        }
+      } catch {
+        // fall through to comma-separated parsing
+      }
+    }
+
+    if (!trimmed) return [];
+    return trimmed
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(label => ({ label, checked: false }));
+  };
+
+  const parsedItems = parseItems(rawItems);
+  const fallbackItems = parsedItems.length > 0 ? parsedItems : [
+    { label: 'Item 1', checked: false },
+    { label: 'Item 2', checked: false },
+    { label: 'Item 3', checked: false },
+  ];
+  const initialItems = fallbackItems.map((item, i) =>
+    preChecked.has(i) ? { ...item, checked: true } : item
   );
+  const itemLabels = initialItems.map(item => item.label);
+
+  const [items, setItems] = useState<Item[]>(initialItems);
   const [cursor, setCursor] = useState(0);
   const [scroll, setScroll] = useState(0);
 

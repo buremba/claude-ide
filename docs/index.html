@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Termos Demo</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/asciinema-player@3.0.1/dist/bundle/asciinema-player.css"
+    />
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        background: #0b0f14;
+      }
+
+      #player {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="player"></div>
+    <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.0.1/dist/bundle/asciinema-player.min.js"></script>
+    <script>
+      AsciinemaPlayer.create("recordings/termos.cast", document.getElementById("player"), {
+        autoPlay: false,
+        loop: false,
+        fit: "both"
+      });
+    </script>
+  </body>
+</html>

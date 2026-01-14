@@ -84,8 +84,7 @@ Schema Format:
     ]
   }
 
-Input Methods:
+Input Method:
   --schema '<json>'     Pass JSON directly (escape quotes carefully)
-  cat file.json | ...   Pipe JSON via stdin (recommended for complex schemas)
 `.trim();
 }

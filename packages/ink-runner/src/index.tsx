@@ -41,43 +41,6 @@ function parseArgs(): CliArgs {
   return result;
 }
 
-/**
- * Read JSON from stdin (non-blocking check, then blocking read if data available)
- */
-async function readStdin(): Promise<string | null> {
-  // Check if stdin has data (is a pipe, not a TTY)
-  if (process.stdin.isTTY) {
-    return null;
-  }
-
-  return new Promise((resolve) => {
-    let data = "";
-    process.stdin.setEncoding("utf8");
-
-    // Set a short timeout in case stdin is empty but not TTY (e.g., /dev/null)
-    const timeout = setTimeout(() => {
-      process.stdin.removeAllListeners();
-      resolve(data || null);
-    }, 100);
-
-    process.stdin.on("data", (chunk) => {
-      data += chunk;
-    });
-
-    process.stdin.on("end", () => {
-      clearTimeout(timeout);
-      resolve(data || null);
-    });
-
-    process.stdin.on("error", () => {
-      clearTimeout(timeout);
-      resolve(null);
-    });
-
-    process.stdin.resume();
-  });
-}
-
 function showHelp(): void {
   console.log(`
 ink-runner - Interactive form runner for termos
@@ -85,7 +48,6 @@ ink-runner - Interactive form runner for termos
 Usage:
   ink-runner --schema '<json>' [--title 'Form Title']
   ink-runner --file /path/to/component.tsx [--title 'Title']
-  echo '<json>' | ink-runner [--title 'Form Title']
 
 Options:
   -s, --schema <json>   JSON schema defining the form
@@ -94,7 +56,7 @@ Options:
   -h, --help            Show this help message
   --no-sandbox          Disable sandboxing for custom components
 
-Either --schema, --file, or piped stdin is required.
+Either --schema or --file is required.
 
 Environment:
   MCP_EVENTS_FILE       Path to events.jsonl file (results written here)
@@ -127,7 +89,25 @@ Controls:
 `);
 }
 
+function registerCancelHandlers(): void {
+  let cancelled = false;
+  const emitCancel = () => {
+    if (cancelled) return;
+    cancelled = true;
+    emitResult({ action: "cancel" });
+  };
+
+  const signals: NodeJS.Signals[] = ["SIGTERM", "SIGINT", "SIGHUP", "SIGQUIT"];
+  for (const signal of signals) {
+    process.on(signal, () => {
+      emitCancel();
+      process.exit(1);
+    });
+  }
+}
+
 async function main(): Promise<void> {
+  registerCancelHandlers();
   const args = parseArgs();
 
   if (args.help) {
@@ -161,46 +141,41 @@ async function main(): Promise<void> {
         await waitUntilExit();
         return;
       } catch (err) {
-        console.error("Error:", err instanceof Error ? err.message : String(err));
-        emitResult({ action: "cancel" });
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("Error:", message);
+        emitResult({ action: "cancel", result: { error: message } });
         process.exit(1);
       }
     }
 
+    // Sandbox disabled by default on Linux due to Node.js permission assertion bug
+    const defaultSandboxEnabled = process.platform !== "linux" && !args.noSandbox;
     await runFromFile({
       filePath: args.file,
       title: args.title,
-      sandbox: { enabled: !args.noSandbox },
+      sandbox: { enabled: defaultSandboxEnabled },
       args: componentArgs,
     });
     return;
   }
 
-  // Mode 1: Schema-based form (from --schema or stdin)
-  let schemaJson = args.schema;
-
-  // Try reading from stdin if no --schema provided
-  if (!schemaJson) {
-    const stdinData = await readStdin();
-    if (stdinData) {
-      schemaJson = stdinData.trim();
-    }
-  }
-
-  if (!schemaJson) {
-    console.error("Error: Either --schema, --file, or piped stdin is required");
+  // Mode 1: Schema-based form (from --schema)
+  if (!args.schema) {
+    const message = "Either --schema or --file is required";
+    console.error("Error:", message);
     console.error("Run 'ink-runner --help' for usage");
-    emitResult({ action: "cancel" });
+    emitResult({ action: "cancel", result: { error: message } });
     process.exit(1);
   }
 
   let schema: FormSchema;
   try {
-    const rawSchema = JSON.parse(schemaJson);
+    const rawSchema = JSON.parse(args.schema);
     schema = parseFormSchema(rawSchema);
   } catch (err) {
-    console.error("Error:", err instanceof Error ? err.message : String(err));
-    emitResult({ action: "cancel" });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Error:", message);
+    emitResult({ action: "cancel", result: { error: message } });
     process.exit(1);
   }
 
@@ -212,7 +187,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
-  emitResult({ action: "cancel" });
+  const message = err instanceof Error ? err.message : String(err);
+  console.error("Fatal error:", message);
+  emitResult({ action: "cancel", result: { error: message } });
   process.exit(1);
 });

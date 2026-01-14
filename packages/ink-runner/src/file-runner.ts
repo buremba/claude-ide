@@ -70,7 +70,9 @@ export async function runFromFile(
 
   const filePath = options.filePath;
   const displayTitle = options.title;
-  const sandbox: SandboxOptions = options.sandbox ?? { enabled: true };
+  // Disable sandbox by default in Docker/Linux due to Node.js permission assertion bug
+  const isLinux = process.platform === "linux";
+  const sandbox: SandboxOptions = options.sandbox ?? { enabled: !isLinux };
 
   // Validate file exists
   const absFilePath = path.resolve(filePath);
@@ -116,25 +118,36 @@ globalThis.args = ${componentArgsJson};
 
 // Set up the onComplete callback
 let __resultEmitted = false;
-globalThis.onComplete = function(result) {
+const __emitResult = (action, result) => {
   if (__resultEmitted) return;
   __resultEmitted = true;
-
-  // Write result directly to events file
   if (__eventsFile && __interactionId) {
     const event = {
       ts: Date.now(),
       type: 'result',
       id: __interactionId,
-      action: 'accept',
-      result: result,
+      action,
+      ...(result !== undefined && { result }),
     };
     appendFileSync(__eventsFile, JSON.stringify(event) + '\\n');
   }
+};
 
-  // Exit immediately
+globalThis.onComplete = function(result) {
+  __emitResult('accept', result);
   process.exit(0);
 };
+
+const __emitCancel = () => {
+  __emitResult('cancel');
+};
+
+['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGQUIT'].forEach((signal) => {
+  process.on(signal, () => {
+    __emitCancel();
+    process.exit(1);
+  });
+});
 
 // Validate default export
 if (!Component) {
@@ -253,9 +266,13 @@ const __dirname = __dirname_fn(__filename);
       process.exit(1);
     }
 
-    // Show title if provided
+    // Show title if provided (box border style)
     if (displayTitle) {
-      console.log(`\x1b[36m${displayTitle}\x1b[0m\n`);
+      const cols = process.stdout.columns || 80;
+      const titleLen = displayTitle.length;
+      const padding = cols - titleLen - 4; // 4 = "╭─ " + " ╮"
+      const line = "─".repeat(Math.max(0, padding));
+      console.log(`\x1b[36m╭─ ${displayTitle} ${line}╮\x1b[0m`);
     }
 
     // Build node arguments with optional sandbox permissions

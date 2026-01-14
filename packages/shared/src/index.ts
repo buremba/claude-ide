@@ -14,3 +14,12 @@ export {
   type FormAction,
   type FormResult,
 } from "./protocol.js";
+
+// Component schemas for CLI help generation
+export {
+  componentSchemas,
+  generateComponentHelp,
+  generateFullHelp,
+  type ArgSchema,
+  type ComponentSchema,
+} from "./component-schemas.js";

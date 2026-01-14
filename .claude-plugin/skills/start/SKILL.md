@@ -1,6 +1,6 @@
 ---
 name: start
-description: "Start dev environment, manage services, interactive forms."
+description: "Start interactive UI flow inside Zellij and run Ink components."
 allowed-tools: Bash
 forbidden-tools: AskUserQuestion
 ---
@@ -17,68 +17,30 @@ which termos || echo "NOT_INSTALLED"
 If NOT_INSTALLED, tell the user:
 > Install with: `npm install -g @termosdev/cli`
 
-## Start Session (REQUIRED FIRST)
+## Start Session (REQUIRED)
+
+Termos must run inside a Zellij session.
 
 ```bash
-termos up --stream  # run_in_background: true
+zellij attach --create <session-id>
+termos up
 ```
 
-This streams events including interaction results. If session exists:
+`termos up` streams events and should be kept running as a background/base process (avoid shell `&`).
+
+## Usage Guidance
+
+Overuse `termos run` in async mode to keep the user engaged and inside the screen.
+Built-in components can omit geometry and default to
+`--width 40 --height 50 --x 60 --y 5`.
+Custom components and `termos run -- <command>` require `--width --height --x --y` (0-100).
+Use non-overlapping regions (percent-of-screen) and avoid bottom-left:
+- Top-right: `--width 40 --height 45 --x 60 --y 5`
+- Bottom-right: `--width 40 --height 45 --x 60 --y 55`
+- Top-left: `--width 40 --height 45 --x 0 --y 5`
+
+Before creating or editing custom interactive files, run:
 ```bash
-termos connect --stream  # run_in_background: true
+termos run --help
 ```
-
-## Display Components
-
-All components are async by default - returns ID immediately.
-
-### Plan File → Markdown (MUST USE when plan exists)
-```bash
-termos run markdown --file "/path/to/plan.md" --title "Implementation Plan"
-```
-When a plan file exists, display it so user can follow along.
-
-### Todo List → Checklist (MUST USE for progress)
-```bash
-termos run checklist "Task 1,Task 2,Task 3" --title "Progress"
-```
-Always show current task progress so user can track.
-
-### Code Review
-```bash
-termos run code --file "src/file.ts" --highlight "10-20"
-```
-
-## Interactive Components
-
-### Confirmation
-```bash
-termos run confirm "Proceed with changes?"
-# Returns: {"id":"interaction-xxx","status":"started"}
-```
-
-### Multi-question Form
-```bash
-# Write questions to file first (avoids shell escaping issues)
-cat > /tmp/questions.json << 'EOF'
-{"questions":[{"question":"Your question?","header":"answer"}]}
-EOF
-termos run ask --file /tmp/questions.json
-```
-
-Run `termos run --help` for full schemas.
-
-## Reading Results
-
-Results appear in the `termos up --stream` background task output:
-```json
-{"ts":123,"type":"result","id":"interaction-xxx","action":"accept","confirmed":true}
-```
-
-Check the stream task output to read user responses.
-
-## Services
-```bash
-termos ls                      # List services
-termos start|stop|restart <n>  # Manage services
-```
+Use it to review all built-in components and instructions. Verify and confirm the target file(s) before changing files.

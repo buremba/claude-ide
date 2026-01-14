@@ -124,11 +124,6 @@ export function SchemaForm({ schema, title }: Props) {
         </Text>
       </Box>
 
-      {/* Header/Label */}
-      <Box marginBottom={1}>
-        <Text bold color="yellow">[{currentQuestion.header}]</Text>
-      </Box>
-
       {/* Question */}
       <Box marginBottom={1}>
         <Text>{currentQuestion.question}</Text>

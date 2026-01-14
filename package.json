@@ -1,7 +1,7 @@
 {
   "name": "@termosdev/cli",
   "version": "0.3.2",
-  "description": "Interactive Development Environment for Claude Code - manage processes, terminals, and interactive UIs",
+  "description": "Interactive UI runner for Claude Code using Zellij floating panes",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -10,6 +10,7 @@
   "files": [
     "dist",
     ".claude-plugin",
+    "skills",
     "templates",
     "!dist/**/*.map"
   ],
@@ -34,18 +35,14 @@
   "keywords": [
     "ide",
     "interactive",
-    "dev-server",
     "terminal",
-    "process-manager",
     "claude-code",
     "ai-agent",
-    "tmux",
-    "dashboard"
+    "zellij"
   ],
   "license": "MIT",
   "dependencies": {
     "@termosdev/shared": "file:packages/shared",
-    "yaml": "^2.3.4",
     "zod": "^3.22.4"
   },
   "devDependencies": {
