@@ -20,7 +20,7 @@ If NOT_INSTALLED, tell the user:
 ## Start Session (REQUIRED)
 
 On Linux/Windows, Termos must run inside a Zellij session.
-On macOS, Termos can run without Zellij and will open Terminal tabs.
+On macOS, Termos can run without Zellij and will open Ghostty if available, otherwise Terminal tabs.
 
 ```bash
 zellij attach --create <session-id>

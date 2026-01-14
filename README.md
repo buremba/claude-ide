@@ -34,8 +34,8 @@ Restart Codex after installing.
 
 ## Requirements
 
-- Zellij is required on Linux/Windows. On macOS, Termos can also run outside Zellij and will open
-  new Terminal tabs for interactions.
+- Zellij is required on Linux/Windows. On macOS, Termos can run outside Zellij and will open
+  Ghostty if available; otherwise it opens macOS Terminal tabs for interactions.
 - Pane geometry is required for custom components and commands when using Zellij. Built-ins default to
   width 40, height 50, x 60, y 5 (top-right) when omitted. Geometry is ignored in macOS Terminal mode.
 
@@ -63,7 +63,7 @@ termos run confirm --prompt "Proceed?"
 
 Defaults for built-ins: `--width 40 --height 50 --x 60 --y 5`.
 
-macOS Terminal mode (no Zellij):
+macOS mode (no Zellij):
 
 ```bash
 termos up

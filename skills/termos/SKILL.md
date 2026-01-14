@@ -13,7 +13,7 @@ termos up
 ```
 Keep `termos up` running to receive interaction results.
 
-On macOS without Zellij, Termos will open a Terminal tab for each interaction. Geometry is ignored.
+On macOS without Zellij, Termos will open Ghostty if available, otherwise a Terminal tab for each interaction. Geometry is ignored.
 If `termos up` and `termos run` are in different directories, set `TERMOS_SESSION_NAME` for both.
 
 ## Geometry (defaults for built-ins)

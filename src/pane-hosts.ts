@@ -1,6 +1,8 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import * as path from "path";
+import * as os from "os";
+import * as fs from "fs";
 import { normalizeSessionName } from "./runtime.js";
 import { runFloatingPane } from "./zellij.js";
 
@@ -17,7 +19,7 @@ export interface PaneRunOptions {
 }
 
 export interface PaneHost {
-  kind: "zellij" | "mac-terminal";
+  kind: "zellij" | "ghostty" | "mac-terminal";
   sessionName: string;
   supportsGeometry: boolean;
   run(command: string, options: PaneRunOptions, env?: Record<string, string>): Promise<void>;
@@ -55,6 +57,34 @@ function escapeAppleScript(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
 }
 
+function findExecutable(name: string): string | undefined {
+  const envPath = process.env.PATH ?? "";
+  const entries = envPath.split(path.delimiter).filter(Boolean);
+  for (const entry of entries) {
+    const fullPath = path.join(entry, name);
+    try {
+      const stat = fs.statSync(fullPath);
+      if (stat.isFile() && (stat.mode & 0o111)) {
+        return fullPath;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return undefined;
+}
+
+function resolveGhosttyApp(): string | undefined {
+  const appCandidates = [
+    "/Applications/Ghostty.app",
+    path.join(os.homedir(), "Applications", "Ghostty.app"),
+  ];
+  for (const candidate of appCandidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
 function createZellijHost(sessionName: string): PaneHost {
   return {
     kind: "zellij",
@@ -62,6 +92,29 @@ function createZellijHost(sessionName: string): PaneHost {
     supportsGeometry: true,
     async run(command, options, env) {
       await runFloatingPane(command, options, env);
+    },
+  };
+}
+
+function createGhosttyHost(sessionName: string): PaneHost {
+  const ghosttyApp = resolveGhosttyApp() ?? "Ghostty.app";
+  return {
+    kind: "ghostty",
+    sessionName,
+    supportsGeometry: false,
+    async run(command, options, env) {
+      const cwd = options.cwd ?? process.cwd();
+      const name = options.name ?? "termos";
+      const clearCommand = `printf '\\033[3J\\033[H\\033[2J'`;
+      const titleCommand = `printf '\\033]0;termos:${name}\\007'`;
+      const closeNote = options.closeOnExit
+        ? `; printf '\\n[termos] Pane closed. Please close this tab/window.\\n'`
+        : "";
+      const shellCommand = buildShellCommand(
+        `cd ${shellEscape(cwd)}; ${clearCommand}; ${titleCommand}; ${command}${closeNote}`,
+        env
+      );
+      await execFileAsync("open", ["-na", ghosttyApp, "--args", "-e", "sh", "-lc", shellCommand]);
     },
   };
 }
@@ -107,6 +160,9 @@ export function selectPaneHost(cwd: string, sessionNameOverride?: string): PaneH
   }
 
   if (process.platform === "darwin") {
+    if (findExecutable("ghostty") || resolveGhosttyApp()) {
+      return createGhosttyHost(resolved.name);
+    }
     return createMacTerminalHost(resolved.name);
   }
 

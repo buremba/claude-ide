@@ -21,7 +21,7 @@ function showRunHelp(): void {
 
 function showHelp(): void {
   console.log(`
-termos - Interactive UI runner for Claude Code (Zellij or macOS Terminal)
+termos - Interactive UI runner for Claude Code (Zellij, Ghostty, or macOS Terminal)
 
 Usage:
   termos up                   Stream events (long-running)
