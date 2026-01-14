@@ -8,7 +8,7 @@ import {
   type FormSchema,
 } from "@termosdev/shared";
 import { findResultEvent } from "./events.js";
-import { ensureEventsFile } from "./runtime.js";
+import { ensureEventsFile, getSessionRuntimeDir } from "./runtime.js";
 import { requireZellijSession, runFloatingPane } from "./zellij.js";
 
 // ESM compatibility for __dirname
@@ -37,6 +37,7 @@ export interface InteractionState {
   createdAt: Date;
   timeoutMs?: number;
   ephemeral?: boolean;  // If true, kill pane when result detected
+  pidFile?: string;
 }
 
 export interface CreateInteractionOptions {
@@ -202,24 +203,30 @@ export class InteractionManager extends EventEmitter {
   async create(options: CreateInteractionOptions): Promise<string> {
     const id = options.id ?? this.generateId();
     const eventsFile = this.getEventsFile();
-    const env = buildInteractionEnv(id, eventsFile);
+    const pidFile = path.join(getSessionRuntimeDir(this.sessionName), `pid-${id}.txt`);
+    const env = {
+      ...buildInteractionEnv(id, eventsFile),
+      TERMOS_PID_FILE: pidFile,
+    };
     const shellEscape = (s: string) => s.replace(/'/g, "'\\''");
+    const pidPrefix = 'if [ -n "$TERMOS_PID_FILE" ]; then echo $$ > "$TERMOS_PID_FILE"; fi';
 
     let command: string;
 
     if (options.inkFile) {
       const resolvedPath = this.resolveInkFile(options.inkFile);
-      command = `node "${this.inkRunnerPath}" --file '${shellEscape(resolvedPath)}'`;
+      command = `${pidPrefix}; node "${this.inkRunnerPath}" --file '${shellEscape(resolvedPath)}'`;
       if (options.title) command += ` --title '${shellEscape(options.title)}'`;
       if (options.inkArgs) command += ` --args '${shellEscape(JSON.stringify(options.inkArgs))}'`;
     } else if (options.schema) {
-      command = `node "${this.inkRunnerPath}" --schema '${shellEscape(JSON.stringify(options.schema))}'`;
+      command = `${pidPrefix}; node "${this.inkRunnerPath}" --schema '${shellEscape(JSON.stringify(options.schema))}'`;
       if (options.title) command += ` --title '${shellEscape(options.title)}'`;
     } else if (options.command) {
       // Wrap command to write result to events file on exit or signal
       const escapedEventsFile = shellEscape(eventsFile);
       const escapedId = shellEscape(id);
       command = [
+        pidPrefix,
         `__events=${escapedEventsFile}`,
         `__id=${escapedId}`,
         "__sent=0",
@@ -264,7 +271,7 @@ export class InteractionManager extends EventEmitter {
       command,
       {
         name: id,
-        cwd: process.cwd(),
+        cwd: this.cwd,
         width,
         height,
         x,
@@ -281,6 +288,7 @@ export class InteractionManager extends EventEmitter {
       createdAt: new Date(),
       timeoutMs: options.timeoutMs,
       ephemeral,
+      pidFile,
     };
 
     this.interactions.set(id, state);
@@ -363,13 +371,27 @@ export class InteractionManager extends EventEmitter {
       return false;
     }
 
-    // Stop polling
-    this.stopPolling(id);
+    if (state.pidFile) {
+      try {
+        const pidRaw = fs.readFileSync(state.pidFile, "utf-8").trim();
+        const pid = Number(pidRaw);
+        if (Number.isFinite(pid) && pid > 0) {
+          try {
+            process.kill(pid, "SIGTERM");
+          } catch {
+            // Ignore if process already exited
+          }
+        }
+      } catch {
+        // Ignore pid lookup errors
+      }
+    }
 
-    // Update state
+    // Stop polling and update state
+    this.stopPolling(id);
     state.status = "cancelled";
     state.result = { action: "cancel" };
-    this.interactions.delete(id);
+    await this.cleanup(id);
     this.emit("interactionComplete", id, state.result);
 
     return true;
@@ -385,6 +407,13 @@ export class InteractionManager extends EventEmitter {
     }
 
     this.stopPolling(id);
+    if (state.pidFile) {
+      try {
+        fs.unlinkSync(state.pidFile);
+      } catch {
+        // Ignore
+      }
+    }
 
     this.interactions.delete(id);
   }
