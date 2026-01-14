@@ -1,7 +1,8 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import * as path from "path";
-import { normalizeSessionName } from "./runtime.js";
+import * as fs from "fs";
+import { getSessionRuntimeDir, normalizeSessionName } from "./runtime.js";
 import { runFloatingPane } from "./zellij.js";
 
 const execFileAsync = promisify(execFile);
@@ -95,11 +96,19 @@ function createMacTerminalHost(sessionName: string): PaneHost {
     },
     async close(name) {
       if (!name) return;
+      const ttyFile = path.join(getSessionRuntimeDir(sessionName), `tty-${name}.txt`);
+      let tty: string | undefined;
+      try {
+        tty = fs.readFileSync(ttyFile, "utf-8").trim();
+      } catch {
+        tty = undefined;
+      }
       const target = `termos:${name}`;
       const script = [
         "tell application \"Terminal\"",
         "repeat with w in windows",
         "repeat with t in tabs of w",
+        ...(tty ? [`if (tty of t) is \"${escapeAppleScript(tty)}\" then`, "close t", "return", "end if"] : []),
         "set tabTitle to \"\"",
         "try",
         "set tabTitle to custom title of t",

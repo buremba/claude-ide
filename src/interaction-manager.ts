@@ -38,6 +38,7 @@ export interface InteractionState {
   timeoutMs?: number;
   ephemeral?: boolean;  // If true, kill pane when result detected
   pidFile?: string;
+  ttyFile?: string;
 }
 
 export interface CreateInteractionOptions {
@@ -207,22 +208,25 @@ export class InteractionManager extends EventEmitter {
     const id = options.id ?? this.generateId();
     const eventsFile = this.getEventsFile();
     const pidFile = path.join(getSessionRuntimeDir(this.sessionName), `pid-${id}.txt`);
+    const ttyFile = path.join(getSessionRuntimeDir(this.sessionName), `tty-${id}.txt`);
     const env = {
       ...buildInteractionEnv(id, eventsFile),
       TERMOS_PID_FILE: pidFile,
+      TERMOS_TTY_FILE: ttyFile,
     };
     const shellEscape = (s: string) => s.replace(/'/g, "'\\''");
     const pidPrefix = 'if [ -n "$TERMOS_PID_FILE" ]; then echo $$ > "$TERMOS_PID_FILE"; fi';
+    const ttyPrefix = 'if [ -n "$TERMOS_TTY_FILE" ]; then tty > "$TERMOS_TTY_FILE"; fi';
 
     let command: string;
 
     if (options.inkFile) {
       const resolvedPath = this.resolveInkFile(options.inkFile);
-      command = `${pidPrefix}; exec node "${this.inkRunnerPath}" --file '${shellEscape(resolvedPath)}'`;
+      command = `${pidPrefix}; ${ttyPrefix}; exec node "${this.inkRunnerPath}" --file '${shellEscape(resolvedPath)}'`;
       if (options.title) command += ` --title '${shellEscape(options.title)}'`;
       if (options.inkArgs) command += ` --args '${shellEscape(JSON.stringify(options.inkArgs))}'`;
     } else if (options.schema) {
-      command = `${pidPrefix}; exec node "${this.inkRunnerPath}" --schema '${shellEscape(JSON.stringify(options.schema))}'`;
+      command = `${pidPrefix}; ${ttyPrefix}; exec node "${this.inkRunnerPath}" --schema '${shellEscape(JSON.stringify(options.schema))}'`;
       if (options.title) command += ` --title '${shellEscape(options.title)}'`;
     } else if (options.command) {
       // Wrap command to write result to events file on exit or signal
@@ -230,6 +234,7 @@ export class InteractionManager extends EventEmitter {
       const escapedId = shellEscape(id);
       command = [
         pidPrefix,
+        ttyPrefix,
         `__events=${escapedEventsFile}`,
         `__id=${escapedId}`,
         "__sent=0",
@@ -292,6 +297,7 @@ export class InteractionManager extends EventEmitter {
       timeoutMs: options.timeoutMs,
       ephemeral,
       pidFile,
+      ttyFile,
     };
 
     this.interactions.set(id, state);
@@ -428,6 +434,13 @@ export class InteractionManager extends EventEmitter {
     if (state.pidFile) {
       try {
         fs.unlinkSync(state.pidFile);
+      } catch {
+        // Ignore
+      }
+    }
+    if (state.ttyFile) {
+      try {
+        fs.unlinkSync(state.ttyFile);
       } catch {
         // Ignore
       }
