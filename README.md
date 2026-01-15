@@ -79,12 +79,14 @@ Note: On macOS, the session name is automatically generated from the directory n
 ## CLI Commands
 
 ```bash
-termos up                   # Stream events for current session (long-running)
-termos run <component>       # Run a built-in or custom Ink component
-termos run -- <command>      # Run a shell command (tab by default)
+termos up                        # Stream events for current session (long-running)
+termos run <component>           # Run a built-in or custom Ink component
+termos run --cmd "<command>"     # Run a shell command (recommended for agents)
+termos run --cmd-file <path>     # Run a shell command from file
+termos run -- <command>          # Run a shell command (passthrough)
 ```
 
-Built-in components: `ask`, `confirm`, `checklist`, `code`, `diff`, `table`, `progress`, `mermaid`, `markdown`, `plan-viewer`.
+Built-in components: `ask`, `confirm`, `checklist`, `code`, `diff`, `table`, `progress`, `mermaid`, `markdown`, `plan-viewer`, `chart`, `gauge`, `json`, `select`, `tree`.
 
 Run `termos run --help` for detailed schemas and options.
 
@@ -122,6 +124,26 @@ termos run --title "Server" -- python3 -m http.server 8080
 ```
 
 Note: Split positions only work in Zellij. On macOS without Zellij, split falls back to a new window.
+
+## Live Data
+
+Use `--watch-cmd` to display live-updating data in components like `gauge` and `chart`:
+
+```bash
+# Monitor line count
+termos run --title "Lines" gauge --watch-cmd "wc -l *.ts | awk '{print \$1}'" --max 10000
+
+# Track process count
+termos run --title "Procs" gauge --watch-cmd "ps aux | wc -l" --interval 2000
+
+# Live chart from JSON
+termos run --title "CPU" chart --watch-cmd "cat /tmp/metrics.json" --parse json
+```
+
+Options:
+- `--watch-cmd "<cmd>"` - Shell command to run periodically
+- `--interval <ms>` - Refresh interval in milliseconds (default: 1000)
+- `--parse <mode>` - Output parsing: `number`, `json`, `lines`, `raw`, `auto` (default: auto)
 
 ## Interactive Forms
 
