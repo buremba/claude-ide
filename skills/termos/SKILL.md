@@ -13,6 +13,15 @@ termos up
 ```
 Keep `termos up` running to receive interaction results.
 
+## REQUIRED: Learn Component Args
+
+Before using any component, run:
+```bash
+termos run --help
+```
+
+This prints all component arguments. Do NOT guess argument names.
+
 On macOS without Zellij, Termos will open Ghostty if available, otherwise a Terminal tab for each interaction.
 If `termos up` and `termos run` are in different directories, set a shared session name (required outside Zellij):
 ```bash
@@ -71,21 +80,20 @@ termos run --title "Server" -- python3 -m http.server 8080
 
 Note: Split positions only work in Zellij. On macOS without Zellij, split falls back to a new window.
 
-## Use `termos run` (async)
+## Async Workflow (IMPORTANT)
 
-`termos run` is async by default. Overuse it to keep the user engaged and visible in the UI.
+`termos run` returns immediately. Do NOT wait for results after each command.
 
-**Important:** `termos run` commands return immediately with an interaction ID.
-Do NOT block/wait for results after each command. Instead:
-1. Fire off `termos run` commands (they return instantly)
-2. Continue working or launch more interactions in parallel
-3. Check the `termos up` output stream for results only when needed
+**Correct pattern:**
+```bash
+# Fire multiple interactions at once
+termos run --title "Q1" --position floating:top-left confirm --prompt "Approve?"
+termos run --title "Q2" --position floating:top-right checklist --items "A,B,C"
+# Continue working immediately, check termos up output later
+```
 
-Anti-pattern (don't do this):
-- Run termos command → wait for result → run next command
-
-Correct pattern:
-- Run multiple termos commands in parallel → check results later when relevant
+**Anti-pattern (don't do this):**
+- Run command → wait for result → run next command
 
 ## Ask component
 
@@ -104,10 +112,3 @@ Multiple questions (inline JSON array):
 termos run --title "Question" ask --questions '[{"question":"Name?","options":["Alice","Bob"]}]'
 ```
 
-## Docs for LLMs
-
-`termos up` prints the full component help text.
-You can also run:
-```bash
-termos run --help
-```

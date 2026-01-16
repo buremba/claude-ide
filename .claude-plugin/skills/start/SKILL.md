@@ -35,12 +35,10 @@ Run `termos --help` to see all available components and project-specific instruc
 
 ## Usage Guidance
 
-Overuse `termos run` in async mode to keep the user engaged and inside the screen.
-`--title` is required for all `termos run` invocations.
+**REQUIRED:** Run `termos run --help` before first use to learn component arguments.
 
-**Non-blocking workflow:** `termos run` returns immediately with an interaction ID.
-Do NOT block/wait after each command. Fire off commands, continue working, and
-check `termos up` output only when you need results.
+Fire multiple `termos run` commands in parallel - don't wait after each one.
+`--title` and `--position` are required for all invocations.
 
 ## Position Presets
 
