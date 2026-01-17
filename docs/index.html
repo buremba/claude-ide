@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Termos - Bidirectional CLI Interactivity for Agents</title>
+    <title>Termos - Autonomous, not absent</title>
+    <meta name="description" content="Keep Claude Code interactive while it works. Approve plans, review diffs, and stay in control." />
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Sora:wght@400;500;600;700&display=swap"
@@ -33,21 +34,72 @@
         pointer-events: none;
         z-index: -1;
       }
+
+      /* Gradient text animation */
+      @keyframes gradient-shift {
+        0%, 100% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+      }
+
+      .gradient-text {
+        background: linear-gradient(90deg, #67e8f9, #fde68a, #67e8f9);
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: gradient-shift 4s ease infinite;
+      }
+
+      /* Card hover effect */
+      .feature-card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      }
+      .feature-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 20px 40px -15px rgba(56, 189, 248, 0.2);
+        border-color: rgba(103, 232, 249, 0.3);
+      }
+
+      /* Component card hover */
+      .component-card {
+        transition: all 0.2s ease;
+      }
+      .component-card:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(103, 232, 249, 0.4);
+      }
+
+      /* CTA button glow */
+      .cta-button {
+        box-shadow: 0 0 30px rgba(56, 189, 248, 0.3);
+        transition: all 0.2s ease;
+      }
+      .cta-button:hover {
+        box-shadow: 0 0 50px rgba(56, 189, 248, 0.5);
+        transform: translateY(-2px);
+      }
+
+      /* Smooth scroll */
+      html {
+        scroll-behavior: smooth;
+      }
     </style>
   </head>
   <body class="min-h-screen text-slate-100">
     <div class="bg-grid"></div>
     <div class="mx-auto w-full max-w-6xl px-8 pb-24 pt-12">
+
+      <!-- Navigation -->
       <nav class="flex items-center justify-between">
         <div class="flex items-center gap-3 font-semibold tracking-wide">
-          <span class="text-lg">Termos</span>
+          <span class="text-xl">Termos</span>
         </div>
         <a
-          class="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-300 transition hover:-translate-y-0.5 hover:border-cyan-300/50 hover:text-white"
+          class="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-slate-300 transition hover:-translate-y-0.5 hover:border-cyan-300/50 hover:text-white"
           href="https://github.com/termos-dev/termos"
           target="_blank"
           rel="noreferrer"
-          aria-label="See GitHub"
+          aria-label="GitHub"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true" class="h-5 w-5 fill-current">
             <path
@@ -61,159 +113,346 @@
               0 .27.18.59.69.49 3.97-1.36 6.83-5.21 6.83-9.75C22 6.58 17.52 2 12 2z"
             />
           </svg>
-          <span>See GitHub</span>
+          <span>GitHub</span>
         </a>
       </nav>
 
-      <section class="mt-14 w-full">
-        <h1 class="mt-6 text-center text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
-          Keep <span class="bg-gradient-to-r from-cyan-300 to-amber-200 bg-clip-text text-transparent">Claude Code</span>
-          interactive <br class="hidden sm:block" />while it works.
+      <!-- Hero Section -->
+      <section class="mt-20 text-center">
+        <h1 class="text-5xl font-bold tracking-tight sm:text-6xl lg:text-7xl">
+          <span class="gradient-text">Autonomous, not absent.</span>
         </h1>
-      </section>
+        <p class="mx-auto mt-6 max-w-2xl text-xl text-slate-300">
+          Claude Code runs. You stay in control.
+        </p>
 
-      <section class="mt-10 max-w-4xl mx-auto">
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
-          <div class="rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
-            <div>Approve plans, confirm commands, or choose options from checklists.</div>
-          </div>
-          <div class="rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
-            <div>Review diffs, tables, and test output before the next step.</div>
-          </div>
-          <div class="rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
-            <div>Agents can generate custom Ink components and run them inside your terminal.</div>
-          </div>
-          <div class="rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
-            <div>Avoid losing focus: ask Claude to quiz you, summarize context, or suggest next steps.</div>
-          </div>
+        <!-- CTA Button -->
+        <div class="mt-10">
+          <a
+            href="#install"
+            class="cta-button inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-cyan-400 px-8 py-4 text-lg font-semibold text-slate-900 hover:from-cyan-400 hover:to-cyan-300"
+          >
+            Get Started
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+            </svg>
+          </a>
         </div>
-      </section>
 
-      <section class="mt-12">
-        <div class="flex flex-wrap justify-center gap-3">
-          <button
-            class="video-tab rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-300 transition hover:text-white"
-            type="button"
-            data-video-tab="without"
-          >
-            Without Termos
-          </button>
-          <button
-            class="video-tab rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-300 transition hover:text-white"
-            type="button"
-            data-video-tab="terminal"
-          >
-            Termos in Terminal
-          </button>
-          <button
-            class="video-tab rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-300 transition hover:text-white"
-            type="button"
-            data-video-tab="macos"
-          >
-            Termos in macOS
-          </button>
-        </div>
-        <div class="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-2xl">
+        <!-- Demo Video -->
+        <div class="mt-12 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-2xl">
           <div class="min-h-[420px] w-full">
-            <div id="asciinema-without" class="asciinema-player-container h-[420px] w-full"></div>
-            <div id="asciinema-terminal" class="asciinema-player-container hidden h-[420px] w-full"></div>
-            <video
-              id="video-macos"
-              class="video-player hidden w-full"
-              controls
-              muted
-              autoplay
-              playsinline
-              preload="metadata"
-            >
-              <source src="recordings/screencast.mp4" type="video/mp4" />
-              Screencast goes here.
-            </video>
+            <!-- Primary demo - side by side comparison -->
+            <div id="demo-container" class="h-[420px] w-full flex items-center justify-center">
+              <div id="asciinema-demo"></div>
+            </div>
+          </div>
+        </div>
+        <p class="mt-4 text-sm text-slate-400">Without Termos vs With Termos</p>
+      </section>
+
+      <!-- Feature Cards -->
+      <section class="mt-24">
+        <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <!-- Card 1 -->
+          <div class="feature-card rounded-2xl border border-white/10 bg-white/5 p-6">
+            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-500/10">
+              <svg class="h-6 w-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 class="text-lg font-semibold">Approve, don't just hope</h3>
+            <p class="mt-2 text-sm leading-relaxed text-slate-400">
+              Plans, deploys, destructive commands. See before Claude commits.
+            </p>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="feature-card rounded-2xl border border-white/10 bg-white/5 p-6">
+            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10">
+              <svg class="h-6 w-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+            </div>
+            <h3 class="text-lg font-semibold">Evidence, not faith</h3>
+            <p class="mt-2 text-sm leading-relaxed text-slate-400">
+              Diffs, tests, and tables appear as proof before the next step.
+            </p>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="feature-card rounded-2xl border border-white/10 bg-white/5 p-6">
+            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10">
+              <svg class="h-6 w-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+            </div>
+            <h3 class="text-lg font-semibold">Your terminal, your rules</h3>
+            <p class="mt-2 text-sm leading-relaxed text-slate-400">
+              Custom React components when the built-ins aren't enough.
+            </p>
+          </div>
+
+          <!-- Card 4 -->
+          <div class="feature-card rounded-2xl border border-white/10 bg-white/5 p-6">
+            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/10">
+              <svg class="h-6 w-6 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <h3 class="text-lg font-semibold">Context that sticks</h3>
+            <p class="mt-2 text-sm leading-relaxed text-slate-400">
+              Short check-ins. No more "wait, what was I building?"
+            </p>
           </div>
         </div>
       </section>
 
-      <section class="mt-12 max-w-2xl mx-auto">
-        <h2 class="text-xl font-semibold text-center">Installation</h2>
-        <div class="mt-6 space-y-4">
-          <div class="flex gap-3 p-2">
-            <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xs font-mono font-semibold text-slate-100">
-              1
+      <!-- Component Showcase -->
+      <section class="mt-24">
+        <div class="text-center">
+          <h2 class="text-3xl font-bold">15 Built-in Components</h2>
+          <p class="mt-3 text-slate-400">Plus custom .tsx when you need more</p>
+        </div>
+
+        <div class="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+          <!-- User Input -->
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-cyan-400">confirm</div>
+            <div class="mt-1 text-xs text-slate-500">Yes/No</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-cyan-400">ask</div>
+            <div class="mt-1 text-xs text-slate-500">Text input</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-cyan-400">checklist</div>
+            <div class="mt-1 text-xs text-slate-500">Multi-select</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-cyan-400">select</div>
+            <div class="mt-1 text-xs text-slate-500">Single choice</div>
+          </div>
+
+          <!-- Display -->
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-amber-400">diff</div>
+            <div class="mt-1 text-xs text-slate-500">File changes</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-amber-400">code</div>
+            <div class="mt-1 text-xs text-slate-500">Syntax highlight</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-amber-400">table</div>
+            <div class="mt-1 text-xs text-slate-500">Data tables</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-amber-400">json</div>
+            <div class="mt-1 text-xs text-slate-500">JSON viewer</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-amber-400">markdown</div>
+            <div class="mt-1 text-xs text-slate-500">Rich text</div>
+          </div>
+
+          <!-- Status -->
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-emerald-400">progress</div>
+            <div class="mt-1 text-xs text-slate-500">Steps + spinner</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-emerald-400">chart</div>
+            <div class="mt-1 text-xs text-slate-500">Metrics</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-emerald-400">gauge</div>
+            <div class="mt-1 text-xs text-slate-500">Progress bar</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-emerald-400">tree</div>
+            <div class="mt-1 text-xs text-slate-500">Hierarchy</div>
+          </div>
+
+          <!-- Advanced -->
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-violet-400">mermaid</div>
+            <div class="mt-1 text-xs text-slate-500">Diagrams</div>
+          </div>
+          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+            <div class="font-mono text-sm text-violet-400">plan-viewer</div>
+            <div class="mt-1 text-xs text-slate-500">Approve/reject</div>
+          </div>
+        </div>
+
+        <p class="mt-6 text-center text-sm text-slate-500">
+          Need more? Drop a <span class="font-mono text-slate-400">.tsx</span> file in <span class="font-mono text-slate-400">.termos/interactive/</span>
+        </p>
+      </section>
+
+      <!-- Init Wizard Demo -->
+      <section class="mt-24">
+        <div class="text-center">
+          <h2 class="text-3xl font-bold">Configures to your workflow</h2>
+          <p class="mt-3 text-slate-400">Run <span class="font-mono text-cyan-400">/termos:init</span> and you're ready in 30 seconds</p>
+        </div>
+
+        <div class="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-xl">
+          <div class="min-h-[400px] w-full">
+            <div id="init-demo-container" class="h-[400px] w-full flex items-center justify-center">
+              <div id="asciinema-init"></div>
             </div>
-            <div class="flex-1 text-sm leading-relaxed text-slate-200">
-              Install the CLI and the Claude plugin.
-              <div
-                class="relative mt-2 rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-xs font-mono text-slate-100"
-                data-selectable
+          </div>
+        </div>
+      </section>
+
+      <!-- Environment Support -->
+      <section class="mt-24">
+        <div class="text-center">
+          <h2 class="text-3xl font-bold">Works Everywhere</h2>
+          <p class="mt-3 text-slate-400">Native experience on every platform</p>
+        </div>
+
+        <div class="mt-10 grid gap-6 md:grid-cols-3">
+          <div class="rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+            <div class="mb-3 text-3xl">🍎</div>
+            <h3 class="text-lg font-semibold">macOS</h3>
+            <p class="mt-2 text-sm text-slate-400">
+              Ghostty or Terminal.app<br />
+              Floating windows, native feel
+            </p>
+          </div>
+          <div class="rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+            <div class="mb-3 text-3xl">🐧</div>
+            <h3 class="text-lg font-semibold">Linux + Zellij</h3>
+            <p class="mt-2 text-sm text-slate-400">
+              Split panes, floating panes<br />
+              Tabs, full features
+            </p>
+          </div>
+          <div class="rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+            <div class="mb-3 text-3xl">🪟</div>
+            <h3 class="text-lg font-semibold">Windows + WSL</h3>
+            <p class="mt-2 text-sm text-slate-400">
+              Zellij in WSL<br />
+              Full feature support
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Editor Integration -->
+      <section class="mt-24">
+        <div class="text-center">
+          <h2 class="text-2xl font-bold">Works with your editor</h2>
+          <div class="mt-6 flex flex-wrap justify-center gap-3">
+            <span class="rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-slate-300">nvim</span>
+            <span class="rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-slate-300">vim</span>
+            <span class="rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-slate-300">hx</span>
+            <span class="rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-slate-300">micro</span>
+            <span class="rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-slate-300">nano</span>
+            <span class="rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-slate-300">emacs</span>
+            <span class="rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-slate-300">VS Code</span>
+            <span class="rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-sm text-slate-300">Cursor</span>
+          </div>
+          <p class="mt-4 text-sm text-slate-500">TUI editors enable in-pane editing</p>
+        </div>
+      </section>
+
+      <!-- Three Pillars -->
+      <section class="mt-24 grid gap-6 md:grid-cols-3">
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
+          <h3 class="text-lg font-semibold">Ask without stopping</h3>
+          <p class="mt-2 text-sm leading-relaxed text-slate-400">
+            Claude pauses, you answer whenever. No awkward waiting.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
+          <h3 class="text-lg font-semibold">See the receipts</h3>
+          <p class="mt-2 text-sm leading-relaxed text-slate-400">
+            Every plan, every diff, every test result. Trust, but verify.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
+          <h3 class="text-lg font-semibold">Stay synced, stay sane</h3>
+          <p class="mt-2 text-sm leading-relaxed text-slate-400">
+            Quick pings keep you and Claude on the same page.
+          </p>
+        </div>
+      </section>
+
+      <!-- Installation -->
+      <section id="install" class="mt-24">
+        <div class="rounded-3xl border border-cyan-500/20 bg-gradient-to-b from-cyan-500/10 to-transparent p-8 text-center md:p-12">
+          <h2 class="text-3xl font-bold">Get started in 30 seconds</h2>
+          <p class="mt-3 text-slate-400">Three commands. Never wonder what Claude just did again.</p>
+
+          <div class="mx-auto mt-8 max-w-xl">
+            <div
+              class="relative rounded-xl border border-white/10 bg-slate-950/80 px-6 py-5 text-left font-mono text-sm"
+              data-selectable
+            >
+              <button
+                class="absolute right-3 top-3 flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition hover:-translate-y-0.5 hover:border-cyan-300/50 hover:text-white"
+                type="button"
+                data-copy-target="install-snippet"
+                aria-label="Copy install commands"
               >
-                <button
-                  class="absolute right-2 top-2 flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/5 px-2 py-0.5 text-[11px] text-slate-100 transition hover:-translate-y-0.5 hover:border-cyan-300/50"
-                  type="button"
-                  data-copy-target="install-snippet"
-                  aria-label="Copy install commands"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
-                    <rect x="9" y="9" width="11" height="11" rx="2"></rect>
-                    <rect x="4" y="4" width="11" height="11" rx="2"></rect>
-                  </svg>
-                  Copy
-                </button>
-                <pre class="whitespace-pre-wrap"><code id="install-snippet">npm install -g @termosdev/cli
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                  <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+                  <rect x="4" y="4" width="11" height="11" rx="2"></rect>
+                </svg>
+                Copy
+              </button>
+              <pre class="whitespace-pre-wrap text-slate-100"><code id="install-snippet">npm install -g @termosdev/cli
 claude plugins add-marketplace github:termos-dev/termos
 claude plugins install termos</code></pre>
-              </div>
             </div>
-          </div>
-          <div class="flex items-center gap-3 p-2 text-sm text-slate-200">
-            <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xs font-mono font-semibold text-slate-100">
-              2
-            </div>
-            <div>Run <span class="font-mono">/termos:init</span> in Claude to configure your preferences.</div>
-          </div>
-          <div class="flex items-center gap-3 p-2 text-sm text-slate-200">
-            <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xs font-mono font-semibold text-slate-100">
-              3
-            </div>
-            <div>Claude triggers <span class="font-mono">termos run</span> for interactive components and <span class="font-mono">termos wait</span> for results.</div>
-          </div>
-          <div class="flex items-center gap-3 p-2 text-sm text-slate-200">
-            <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xs font-mono font-semibold text-slate-100">
-              4
-            </div>
-            <div>Replies wake Claude immediately if it is waiting, or are injected into context when the run finishes.</div>
+
+            <p class="mt-6 text-sm text-slate-400">
+              Then run <span class="font-mono text-cyan-400">/termos:init</span> in Claude to configure your preferences.
+            </p>
           </div>
         </div>
       </section>
 
-      <section class="mt-16 grid gap-6 md:grid-cols-3">
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 class="text-lg font-semibold">Async questions</h3>
-          <p class="mt-2 text-sm leading-relaxed text-slate-300">
-            Claude can ask mid-run without blocking, and you answer when ready.
-          </p>
-        </div>
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 class="text-lg font-semibold">Proof while it runs</h3>
-          <p class="mt-2 text-sm leading-relaxed text-slate-300">
-            Plans, diffs, and tests show up as evidence before the next step.
-          </p>
-        </div>
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 class="text-lg font-semibold">Keep context</h3>
-          <p class="mt-2 text-sm leading-relaxed text-slate-300">
-            Short check-ins prevent drift so you stay synced with the agent.
-          </p>
+      <!-- How it works (brief) -->
+      <section class="mt-16">
+        <div class="grid gap-4 md:grid-cols-3">
+          <div class="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-mono font-semibold">1</div>
+            <div class="text-sm text-slate-300">
+              <span class="font-mono text-slate-400">termos run</span> spawns interactive panes
+            </div>
+          </div>
+          <div class="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-mono font-semibold">2</div>
+            <div class="text-sm text-slate-300">
+              <span class="font-mono text-slate-400">termos wait</span> blocks until you respond
+            </div>
+          </div>
+          <div class="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-mono font-semibold">3</div>
+            <div class="text-sm text-slate-300">
+              <span class="font-mono text-slate-400">termos result</span> checks all responses
+            </div>
+          </div>
         </div>
       </section>
 
-      <footer class="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-8 text-sm text-slate-400">
-        <div>Made for more interactive agentic environments.</div>
-        <div>Made with love by <a href="https://twitter.com/bu7emba" target="_blank" rel="noopener noreferrer" class="text-slate-400 hover:text-white transition-colors">@bu7emba</a></div>
+      <!-- Footer -->
+      <footer class="mt-20 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-8 text-sm text-slate-500">
+        <div>Built while Claude was asking permission.</div>
+        <div>
+          Made with love by
+          <a href="https://twitter.com/bu7emba" target="_blank" rel="noopener noreferrer" class="text-slate-400 transition-colors hover:text-white">@bu7emba</a>
+        </div>
       </footer>
     </div>
 
     <script src="vendor/asciinema-player/asciinema-player.min.js"></script>
     <script>
+      // Copy functionality
       const selectCode = (block) => {
         const code = block.querySelector("code");
         if (!code) return;
@@ -241,91 +480,34 @@ claude plugins install termos</code></pre>
           selectCode(button.closest("[data-selectable]"));
           try {
             await navigator.clipboard.writeText(text);
+            button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied`;
+            setTimeout(() => {
+              button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><rect x="9" y="9" width="11" height="11" rx="2"></rect><rect x="4" y="4" width="11" height="11" rx="2"></rect></svg> Copy`;
+            }, 2000);
           } catch {
             document.execCommand("copy");
           }
         });
       });
 
-      const video = document.querySelector("#video-macos");
-      const asciinemaWithout = document.querySelector("#asciinema-without");
-      const asciinemaTerminal = document.querySelector("#asciinema-terminal");
-      const tabs = document.querySelectorAll(".video-tab");
-      const activeTabClass =
-        "bg-white/15 text-white border-cyan-200/60 shadow-[0_0_25px_rgba(56,189,248,0.25)] font-semibold";
-      const inactiveTabClass = "bg-white/5 text-slate-300 font-medium";
+      // Load demo videos
+      const demoContainer = document.getElementById("asciinema-demo");
+      if (window.AsciinemaPlayer && demoContainer) {
+        AsciinemaPlayer.create(
+          "recordings/without-termos.cast",
+          demoContainer,
+          { fit: "width", autoPlay: true, loop: true, speed: 1.5 }
+        );
+      }
 
-      // Lazy-load asciinema players when tab is first shown
-      const asciinemaPlayers = {};
-      const playerConfigs = {
-        without: { src: "recordings/without-termos.cast", el: asciinemaWithout },
-        terminal: { src: "recordings/termos-terminal.cast", el: asciinemaTerminal },
-      };
-
-      const getOrCreatePlayer = (key) => {
-        if (!asciinemaPlayers[key] && window.AsciinemaPlayer && playerConfigs[key]) {
-          const config = playerConfigs[key];
-          asciinemaPlayers[key] = AsciinemaPlayer.create(
-            config.src,
-            config.el,
-            { fit: "width", autoPlay: true, loop: true, speed: 1 }
-          );
-        }
-        return asciinemaPlayers[key];
-      };
-
-      const mediaMap = {
-        without: { type: "asciinema", el: asciinemaWithout },
-        terminal: { type: "asciinema", el: asciinemaTerminal },
-        macos: { type: "video", el: video },
-      };
-
-      const setTabState = (target) => {
-        tabs.forEach((tab) => {
-          if (tab === target) {
-            tab.classList.remove(...inactiveTabClass.split(" "));
-            tab.classList.add(...activeTabClass.split(" "));
-          } else {
-            tab.classList.remove(...activeTabClass.split(" "));
-            tab.classList.add(...inactiveTabClass.split(" "));
-          }
-        });
-      };
-
-      const setMediaState = (key) => {
-        Object.keys(mediaMap).forEach((name) => {
-          const entry = mediaMap[name];
-          if (!entry || !entry.el) return;
-          if (name === key) {
-            entry.el.classList.remove("hidden");
-            if (entry.type === "video" && video) {
-              video.currentTime = 0;
-              video.play().catch(() => {});
-            } else if (entry.type === "asciinema") {
-              // Lazy-create player when tab becomes visible
-              getOrCreatePlayer(name);
-            }
-          } else {
-            entry.el.classList.add("hidden");
-            if (entry.type === "video" && video) {
-              video.pause();
-            }
-          }
-        });
-      };
-
-      tabs.forEach((tab) => {
-        tab.addEventListener("click", () => {
-          setTabState(tab);
-          const key = tab.getAttribute("data-video-tab");
-          if (key) setMediaState(key);
-        });
-      });
-
-      if (tabs.length > 0) {
-        setTabState(tabs[0]);
-        const initialKey = tabs[0].getAttribute("data-video-tab") || "without";
-        setMediaState(initialKey);
+      // Load init wizard demo
+      const initContainer = document.getElementById("asciinema-init");
+      if (window.AsciinemaPlayer && initContainer) {
+        AsciinemaPlayer.create(
+          "recordings/init-demo.cast",
+          initContainer,
+          { fit: "width", autoPlay: true, loop: true, speed: 1.2 }
+        );
       }
     </script>
   </body>
