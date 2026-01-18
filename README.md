@@ -2,111 +2,50 @@
 
 Keep Claude Code interactive while it works.
 
+https://github.com/termos-dev/termos/raw/main/docs/recordings/ghostty.mp4
+
 **[termos-dev.github.io/termos](https://termos-dev.github.io/termos/)**
 
-## Why Termos?
+## The Problem
 
-When Claude Code runs autonomously, you lose visibility and control. Termos lets Claude ask questions mid-run, show evidence (diffs, plans, test output) before proceeding, and keep you in sync without interrupting its flow.
+Claude Code's built-in `AskUserQuestion` tool blocks execution until you respond. One question at a time. If Claude needs approval mid-task, everything stops.
 
-- **Async questions** - Claude asks without blocking; you answer when ready
-- **Proof while it runs** - Plans, diffs, and tests appear as evidence before the next step
-- **Keep context** - Short check-ins prevent drift so you stay synced with the agent
+## The Solution
 
-## Installation
-
-### Claude Code
+Termos is a CLI + Claude Code skill that spawns **floating terminal panes** for interactions. Claude keeps working while you review and respond in your own time.
 
 ```bash
-npm install -g @termosdev/cli
+# Claude runs this (non-blocking)
+termos run confirm --prompt "Deploy to production?"
+
+# Returns immediately with an ID
+# Claude continues working, checks result later
+termos wait <id>
+```
+
+- **Non-blocking** - Claude asks without stopping
+- **Parallel interactions** - Multiple panes, multiple questions
+- **Rich components** - Diffs, tables, checklists, not just text prompts
+
+## Install
+
+```bash
 claude plugins add-marketplace github:termos-dev/termos
 claude plugins install termos
 ```
 
-Then run `/termos:init` in Claude to configure your preferences.
+Then run `/termos:init` in Claude to configure.
 
-### Codex
+## Components
 
-**Repo-scoped (no install):** Add the skill to your repo:
+`confirm` `ask` `checklist` `select` `diff` `code` `table` `json` `markdown` `progress` `chart` `gauge` `tree` `mermaid` `plan-viewer`
 
-```bash
-mkdir -p .codex/skills
-git clone https://github.com/termos-dev/termos.git .codex/skills/termos
-```
-
-**GitHub install (skill installer):**
-
-```bash
-python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo termos-dev/termos \
-  --path skills/termos \
-  --ref main
-```
-
-Restart Codex after installing.
-
-### Alternative: Manual Setup
-
-If you prefer not to use the plugin system:
-
-```bash
-npm install -g @termosdev/cli
-```
-
-Then in your terminal:
-
-```bash
-# Run an interaction (returns an ID)
-termos run --title "Deploy" confirm --prompt "Proceed with deployment?"
-
-# Wait for the result (blocking)
-termos wait <id>
-
-# Or check results non-blocking
-termos result
-```
-
-## How It Works
-
-1. Claude triggers `termos run` to show interactive components (confirmations, checklists, diffs, etc.)
-2. Each interaction returns an ID that can be used to wait for or query results
-3. Your replies are captured and returned when you interact with the pane
-
-## Built-in Components
-
-- `confirm` - Yes/no confirmations
-- `ask` - Text input questions
-- `checklist` - Multi-select options
-- `code` - Syntax-highlighted code blocks
-- `diff` - File diffs with syntax highlighting
-- `table` - Data tables
-- `markdown` - Rendered markdown
-- `mermaid` - Diagrams
-- `progress` - Progress indicators
-- `plan-viewer` - Implementation plans
-- `chart`, `gauge`, `json`, `select`, `tree` - And more
-
-## Custom Components
-
-Create `.tsx` files in `.termos/interactive/` for custom Ink components:
-
-```tsx
-import { Text, useInput, useApp } from 'ink';
-
-declare const onComplete: (result: unknown) => void;
-
-export default function() {
-  const { exit } = useApp();
-  useInput((_, key) => {
-    if (key.return) { onComplete({ done: true }); exit(); }
-  });
-  return <Text>Press Enter to continue</Text>;
-}
-```
+Drop custom `.tsx` files in `.termos/interactive/` for your own Ink components.
 
 ## Requirements
 
-- **macOS**: Works natively, opens Ghostty or Terminal for interactions
-- **Linux/Windows**: Requires [Zellij](https://zellij.dev/) for floating pane support
+- **macOS**: Native support (Ghostty or Terminal.app)
+- **Linux/Windows**: Requires [Zellij](https://zellij.dev/)
 
 ## License
 

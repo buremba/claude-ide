@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Termos - Autonomous, not absent</title>
     <meta name="description" content="Keep Claude Code interactive while it works. Approve plans, review diffs, and stay in control." />
+    <link rel="icon" href="favicon.ico" type="image/x-icon" />
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Sora:wght@400;500;600;700&display=swap"
     />
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="vendor/asciinema-player/asciinema-player.css" />
     <style>
       body {
         font-family: "Sora", system-ui, sans-serif;
@@ -79,10 +79,6 @@
         transform: translateY(-2px);
       }
 
-      /* Smooth scroll */
-      html {
-        scroll-behavior: smooth;
-      }
     </style>
   </head>
   <body class="min-h-screen text-slate-100">
@@ -120,34 +116,61 @@
       <!-- Hero Section -->
       <section class="mt-20 text-center">
         <h1 class="text-5xl font-bold tracking-tight sm:text-6xl lg:text-7xl">
-          <span class="gradient-text">Autonomous, not absent.</span>
+          <span class="gradient-text">Make Claude Code Interactive</span>
         </h1>
-        <p class="mx-auto mt-6 max-w-2xl text-xl text-slate-300">
-          Interactive terminal UI that Claude controls to ask questions, show progress, and get your approval.
-        </p>
-
-        <!-- CTA Button -->
-        <div class="mt-10">
-          <a
-            href="#install"
-            class="cta-button inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-cyan-400 px-8 py-4 text-lg font-semibold text-slate-900 hover:from-cyan-400 hover:to-cyan-300"
-          >
-            Get Started
-            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-            </svg>
-          </a>
-        </div>
-
-        <!-- Demo Video -->
-        <div class="mt-12 rounded-2xl border border-white/10 bg-black/40 shadow-2xl">
-          <div class="min-h-[520px] w-full">
-            <div id="demo-container" class="h-[520px] w-full">
-              <div id="asciinema-demo" class="w-full h-full"></div>
-            </div>
+        <p class="mt-4 text-lg text-slate-400"><a href="#components" class="text-cyan-400 hover:text-cyan-300 transition">Floating panes</a> keep you in the loop while Claude is running</p>
+        <!-- Install Commands -->
+        <div class="mt-10 mx-auto max-w-2xl">
+          <div class="relative rounded-xl border border-white/10 bg-slate-950/80 px-5 py-4 text-left font-mono text-sm" data-selectable>
+            <pre class="whitespace-pre-wrap text-slate-100 pr-20"><code id="install-snippet">claude plugins add-marketplace github:termos-dev/termos
+claude plugins install termos</code></pre>
+            <button
+              class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-400 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:from-cyan-400 hover:to-cyan-300"
+              type="button"
+              data-copy-target="install-snippet"
+              aria-label="Copy install commands"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+                <rect x="4" y="4" width="11" height="11" rx="2"></rect>
+              </svg>
+              Copy
+            </button>
           </div>
         </div>
-        <p class="mt-4 text-sm text-slate-400">Claude launches floating panes or terminal windows to keep you in the loop</p>
+
+        <!-- Demo Video with Tabs -->
+        <div class="mt-12">
+          <!-- Tab Buttons -->
+          <div class="flex justify-center gap-2 mb-4">
+            <button
+              id="tab-macos"
+              class="video-tab px-6 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 bg-white/10 border border-cyan-400/50 text-white"
+              data-tab="macos"
+            >
+              <span class="mr-2">🍎</span>macOS
+            </button>
+            <button
+              id="tab-terminal"
+              class="video-tab px-6 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:border-white/20"
+              data-tab="terminal"
+            >
+              <span class="mr-2">🐧</span>Terminal (Zellij)
+            </button>
+          </div>
+
+          <!-- Video Container -->
+          <div class="overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-2xl">
+            <!-- macOS Video (default, visible) -->
+            <video id="video-macos" class="w-full" autoplay loop muted playsinline controls poster="recordings/poster.jpg">
+              <source src="recordings/ghostty.mp4" type="video/mp4" />
+            </video>
+            <!-- Terminal/Zellij Video (hidden by default) -->
+            <video id="video-terminal" class="w-full hidden" loop muted playsinline controls>
+              <source src="recordings/zellij-demo.mp4" type="video/mp4" />
+            </video>
+          </div>
+        </div>
       </section>
 
       <!-- Feature Cards -->
@@ -160,9 +183,9 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h3 class="text-lg font-semibold">Approve, don't just hope</h3>
+            <h3 class="text-lg font-semibold">Approve, don't hope</h3>
             <p class="mt-2 text-sm leading-relaxed text-slate-400">
-              Plans, deploys, destructive commands. See before Claude commits.
+              Review plans, confirm deploys, approve destructive commands before they run.
             </p>
           </div>
 
@@ -175,7 +198,7 @@
             </div>
             <h3 class="text-lg font-semibold">Evidence, not faith</h3>
             <p class="mt-2 text-sm leading-relaxed text-slate-400">
-              Diffs, tests, and tables appear as proof before the next step.
+              See diffs, test results, and data tables as Claude works. Verify before proceeding.
             </p>
           </div>
 
@@ -186,9 +209,9 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
               </svg>
             </div>
-            <h3 class="text-lg font-semibold">Your terminal, your rules</h3>
+            <h3 class="text-lg font-semibold">Fully customizable</h3>
             <p class="mt-2 text-sm leading-relaxed text-slate-400">
-              Custom React components when the built-ins aren't enough.
+              15 built-in components. Drop custom Ink React components when you need more.
             </p>
           </div>
 
@@ -199,88 +222,96 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <h3 class="text-lg font-semibold">Context that sticks</h3>
+            <h3 class="text-lg font-semibold">Stay in sync</h3>
             <p class="mt-2 text-sm leading-relaxed text-slate-400">
-              Short check-ins. No more "wait, what was I building?"
+              Quick check-ins keep you informed. No more "wait, what did Claude just do?"
             </p>
           </div>
         </div>
       </section>
 
       <!-- Component Showcase -->
-      <section class="mt-24">
+      <section id="components" class="mt-24">
         <div class="text-center">
           <h2 class="text-3xl font-bold">15 Built-in Components</h2>
-          <p class="mt-3 text-slate-400">Plus custom .tsx when you need more</p>
+          <p class="mt-3 text-slate-400">Termos is a CLI that Claude runs to create interactive terminals attached to your session</p>
         </div>
 
-        <div class="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
-          <!-- User Input -->
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-cyan-400">confirm</div>
-            <div class="mt-1 text-xs text-slate-500">Yes/No</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-cyan-400">ask</div>
-            <div class="mt-1 text-xs text-slate-500">Text input</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-cyan-400">checklist</div>
-            <div class="mt-1 text-xs text-slate-500">Multi-select</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-cyan-400">select</div>
-            <div class="mt-1 text-xs text-slate-500">Single choice</div>
-          </div>
-
-          <!-- Display -->
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-amber-400">diff</div>
-            <div class="mt-1 text-xs text-slate-500">File changes</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-amber-400">code</div>
-            <div class="mt-1 text-xs text-slate-500">Syntax highlight</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-amber-400">table</div>
-            <div class="mt-1 text-xs text-slate-500">Data tables</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-amber-400">json</div>
-            <div class="mt-1 text-xs text-slate-500">JSON viewer</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-amber-400">markdown</div>
-            <div class="mt-1 text-xs text-slate-500">Rich text</div>
-          </div>
-
-          <!-- Status -->
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-emerald-400">progress</div>
-            <div class="mt-1 text-xs text-slate-500">Steps + spinner</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-emerald-400">chart</div>
-            <div class="mt-1 text-xs text-slate-500">Metrics</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-emerald-400">gauge</div>
-            <div class="mt-1 text-xs text-slate-500">Progress bar</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-emerald-400">tree</div>
-            <div class="mt-1 text-xs text-slate-500">Hierarchy</div>
+        <div class="mt-10 flex flex-col items-center gap-6">
+          <!-- Component Grid -->
+          <div class="flex flex-wrap gap-2 justify-center max-w-xl">
+            <!-- User Input -->
+            <div class="component-card cursor-pointer rounded-md border border-cyan-500 bg-white/10 px-3 py-1.5 transition hover:bg-white/15" data-component="confirm">
+              <span class="font-mono text-sm text-cyan-400">confirm</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-cyan-500/50 hover:bg-white/10" data-component="ask">
+              <span class="font-mono text-sm text-cyan-400">ask</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-cyan-500/50 hover:bg-white/10" data-component="checklist">
+              <span class="font-mono text-sm text-cyan-400">checklist</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-cyan-500/50 hover:bg-white/10" data-component="select">
+              <span class="font-mono text-sm text-cyan-400">select</span>
+            </div>
+            <!-- Display -->
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-amber-500/50 hover:bg-white/10" data-component="diff">
+              <span class="font-mono text-sm text-amber-400">diff</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-amber-500/50 hover:bg-white/10" data-component="code">
+              <span class="font-mono text-sm text-amber-400">code</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-amber-500/50 hover:bg-white/10" data-component="table">
+              <span class="font-mono text-sm text-amber-400">table</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-amber-500/50 hover:bg-white/10" data-component="json">
+              <span class="font-mono text-sm text-amber-400">json</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-amber-500/50 hover:bg-white/10" data-component="markdown">
+              <span class="font-mono text-sm text-amber-400">markdown</span>
+            </div>
+            <!-- Status -->
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-emerald-500/50 hover:bg-white/10" data-component="progress">
+              <span class="font-mono text-sm text-emerald-400">progress</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-emerald-500/50 hover:bg-white/10" data-component="chart">
+              <span class="font-mono text-sm text-emerald-400">chart</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-emerald-500/50 hover:bg-white/10" data-component="gauge">
+              <span class="font-mono text-sm text-emerald-400">gauge</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-emerald-500/50 hover:bg-white/10" data-component="tree">
+              <span class="font-mono text-sm text-emerald-400">tree</span>
+            </div>
+            <!-- Advanced -->
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-violet-500/50 hover:bg-white/10" data-component="mermaid">
+              <span class="font-mono text-sm text-violet-400">mermaid</span>
+            </div>
+            <div class="component-card cursor-pointer rounded-md border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-violet-500/50 hover:bg-white/10" data-component="plan-viewer">
+              <span class="font-mono text-sm text-violet-400">plan-viewer</span>
+            </div>
           </div>
 
-          <!-- Advanced -->
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-violet-400">mermaid</div>
-            <div class="mt-1 text-xs text-slate-500">Diagrams</div>
-          </div>
-          <div class="component-card rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-            <div class="font-mono text-sm text-violet-400">plan-viewer</div>
-            <div class="mt-1 text-xs text-slate-500">Approve/reject</div>
+          <!-- Preview Panel -->
+          <div class="mx-auto w-full max-w-2xl">
+            <div id="command-example" class="mb-3 rounded-lg bg-slate-900/80 px-4 py-2 font-mono text-sm text-slate-300">
+              <span class="text-slate-500">$</span> termos run <span id="command-component" class="text-cyan-400">confirm</span> <span id="command-args" class="text-slate-400">--prompt "Deploy to production?"</span>
+            </div>
+            <div id="component-preview" class="rounded-xl border border-white/10 bg-black/60 p-4 font-mono text-sm">
+              <div class="flex items-center gap-2 mb-3 pb-2 border-b border-white/10">
+                <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+                <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
+                <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+                <span id="preview-title" class="ml-2 text-slate-400">confirm</span>
+              </div>
+              <pre id="preview-content" class="text-slate-100 leading-relaxed"><span class="text-slate-400">┌─────────────────────────────────────┐</span>
+<span class="text-slate-400">│</span>  <span class="text-cyan-400">Deploy to production?</span>              <span class="text-slate-400">│</span>
+<span class="text-slate-400">│</span>                                     <span class="text-slate-400">│</span>
+<span class="text-slate-400">│</span>  <span class="text-white bg-cyan-600 px-2 rounded">❯ Yes</span>                              <span class="text-slate-400">│</span>
+<span class="text-slate-400">│</span>    <span class="text-slate-400">No</span>                               <span class="text-slate-400">│</span>
+<span class="text-slate-400">│</span>                                     <span class="text-slate-400">│</span>
+<span class="text-slate-400">└─────────────────────────────────────┘</span>
+<span class="text-slate-500 text-xs">↑↓ navigate • enter select • esc cancel</span></pre>
+            </div>
           </div>
         </div>
 
@@ -289,21 +320,6 @@
         </p>
       </section>
 
-      <!-- Init Wizard Demo -->
-      <section class="mt-24">
-        <div class="text-center">
-          <h2 class="text-3xl font-bold">Configures to your workflow</h2>
-          <p class="mt-3 text-slate-400">Run <span class="font-mono text-cyan-400">/termos:init</span> and you're ready in 30 seconds</p>
-        </div>
-
-        <div class="mt-8 rounded-2xl border border-white/10 bg-black/40 shadow-xl">
-          <div class="min-h-[440px] w-full">
-            <div id="init-demo-container" class="h-[440px] w-full">
-              <div id="asciinema-init" class="w-full h-full"></div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       <!-- Environment Support -->
       <section class="mt-24">
@@ -358,63 +374,6 @@
         </div>
       </section>
 
-      <!-- Three Pillars -->
-      <section class="mt-24 grid gap-6 md:grid-cols-3">
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 class="text-lg font-semibold">Ask without stopping</h3>
-          <p class="mt-2 text-sm leading-relaxed text-slate-400">
-            Claude pauses, you answer whenever. No awkward waiting.
-          </p>
-        </div>
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 class="text-lg font-semibold">See the receipts</h3>
-          <p class="mt-2 text-sm leading-relaxed text-slate-400">
-            Every plan, every diff, every test result. Trust, but verify.
-          </p>
-        </div>
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 class="text-lg font-semibold">Stay synced, stay sane</h3>
-          <p class="mt-2 text-sm leading-relaxed text-slate-400">
-            Quick pings keep you and Claude on the same page.
-          </p>
-        </div>
-      </section>
-
-      <!-- Installation -->
-      <section id="install" class="mt-24">
-        <div class="rounded-3xl border border-cyan-500/20 bg-gradient-to-b from-cyan-500/10 to-transparent p-8 text-center md:p-12">
-          <h2 class="text-3xl font-bold">Get started in 30 seconds</h2>
-          <p class="mt-3 text-slate-400">Three commands. Never wonder what Claude just did again.</p>
-
-          <div class="mx-auto mt-8 max-w-xl">
-            <div
-              class="relative rounded-xl border border-white/10 bg-slate-950/80 px-6 py-5 text-left font-mono text-sm"
-              data-selectable
-            >
-              <button
-                class="absolute right-3 top-3 flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition hover:-translate-y-0.5 hover:border-cyan-300/50 hover:text-white"
-                type="button"
-                data-copy-target="install-snippet"
-                aria-label="Copy install commands"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
-                  <rect x="9" y="9" width="11" height="11" rx="2"></rect>
-                  <rect x="4" y="4" width="11" height="11" rx="2"></rect>
-                </svg>
-                Copy
-              </button>
-              <pre class="whitespace-pre-wrap text-slate-100"><code id="install-snippet">npm install -g @termosdev/cli
-claude plugins add-marketplace github:termos-dev/termos
-claude plugins install termos</code></pre>
-            </div>
-
-            <p class="mt-6 text-sm text-slate-400">
-              Then run <span class="font-mono text-cyan-400">/termos:init</span> in Claude to configure your preferences.
-            </p>
-          </div>
-        </div>
-      </section>
-
       <!-- How it works (brief) -->
       <section class="mt-16">
         <div class="grid gap-4 md:grid-cols-3">
@@ -427,13 +386,13 @@ claude plugins install termos</code></pre>
           <div class="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
             <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-mono font-semibold">2</div>
             <div class="text-sm text-slate-300">
-              <span class="font-mono text-slate-400">termos wait</span> blocks until you respond
+              <span class="font-mono text-slate-400">termos wait</span> runs in background
             </div>
           </div>
           <div class="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
             <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-mono font-semibold">3</div>
             <div class="text-sm text-slate-300">
-              <span class="font-mono text-slate-400">termos result</span> checks all responses
+              Claude runs without blocking
             </div>
           </div>
         </div>
@@ -441,7 +400,7 @@ claude plugins install termos</code></pre>
 
       <!-- Footer -->
       <footer class="mt-20 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-8 text-sm text-slate-500">
-        <div>Built while Claude was asking permission.</div>
+        <div>Made with Claude Code running with termos</div>
         <div>
           Made with love by
           <a href="https://twitter.com/bu7emba" target="_blank" rel="noopener noreferrer" class="text-slate-400 transition-colors hover:text-white">@bu7emba</a>
@@ -449,7 +408,6 @@ claude plugins install termos</code></pre>
       </footer>
     </div>
 
-    <script src="vendor/asciinema-player/asciinema-player.min.js"></script>
     <script>
       // Copy functionality
       const selectCode = (block) => {
@@ -489,39 +447,249 @@ claude plugins install termos</code></pre>
         });
       });
 
-      // Load demo videos
-      const demoContainer = document.getElementById("asciinema-demo");
-      if (window.AsciinemaPlayer && demoContainer) {
-        AsciinemaPlayer.create(
-          "recordings/peerbot-demo.cast",
-          demoContainer,
-          {
-            fit: "width",
-            autoPlay: true,
-            loop: true,
-            speed: 1,
-            theme: "dracula",
-            controls: true
-          }
-        );
+      // Component previews
+      const componentPreviews = {
+        confirm: `<span class="text-slate-500">┌─────────────────────────────────────┐</span>
+<span class="text-slate-500">│</span>  <span class="text-cyan-400">Deploy to production?</span>              <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="bg-cyan-600 text-white px-1">❯ Yes</span>                              <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>    <span class="text-slate-400">No</span>                               <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>
+<span class="text-slate-600 text-xs">↑↓ navigate • enter select • esc cancel</span>`,
+
+        ask: `<span class="text-slate-500">┌─────────────────────────────────────┐</span>
+<span class="text-slate-500">│</span>  <span class="text-cyan-400">What is your project name?</span>         <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-white">my-awesome-app<span class="animate-pulse">▌</span></span>                    <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>
+<span class="text-slate-600 text-xs">enter submit • esc cancel</span>`,
+
+        checklist: `<span class="text-slate-500">┌─────────────────────────────────────┐</span>
+<span class="text-slate-500">│</span>  <span class="text-cyan-400">Select tasks to run:</span>               <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-emerald-400">◉</span> <span class="text-white">Build application</span>               <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-emerald-400">◉</span> <span class="text-white">Run tests</span>                       <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-500">○</span> <span class="text-slate-400">Deploy to staging</span>               <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="bg-cyan-600 text-white px-1">○ Notify team</span>                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>
+<span class="text-slate-600 text-xs">space toggle • enter confirm • a all</span>`,
+
+        select: `<span class="text-slate-500">┌─────────────────────────────────────┐</span>
+<span class="text-slate-500">│</span>  <span class="text-cyan-400">Select environment:</span>                <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>    <span class="text-slate-400">Development</span>                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="bg-cyan-600 text-white px-1">❯ Staging</span>                         <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>    <span class="text-slate-400">Production</span>                      <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>
+<span class="text-slate-600 text-xs">↑↓ navigate • enter select • / search</span>`,
+
+        diff: `<span class="text-slate-500">┌─ src/config.ts ─────────────────────┐</span>
+<span class="text-slate-500">│</span> <span class="text-slate-400">@@ -1,4 +1,5 @@</span>                      <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-300">export const config = {</span>            <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-300">  port: 3000,</span>                      <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span><span class="text-emerald-400">+   debug: true,</span>                      <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span><span class="text-red-400">-   verbose: false,</span>                  <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-300">};</span>                                 <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>`,
+
+        code: `<span class="text-slate-500">┌─ utils/format.ts ───────────────────┐</span>
+<span class="text-slate-500">│</span> <span class="text-slate-600">1</span> <span class="text-violet-400">function</span> <span class="text-amber-400">formatDate</span>(date: Date) {  <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span> <span class="text-slate-600">2</span>   <span class="text-violet-400">const</span> options = {                <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span> <span class="text-slate-600">3</span>     year: <span class="text-emerald-400">'numeric'</span>,              <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span> <span class="text-slate-600">4</span>     month: <span class="text-emerald-400">'short'</span>,               <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span> <span class="text-slate-600">5</span>   };                               <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span> <span class="text-slate-600">6</span>   <span class="text-violet-400">return</span> date.toLocaleString();    <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span> <span class="text-slate-600">7</span> }                                   <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>`,
+
+        table: `<span class="text-slate-500">┌──────────┬─────────┬──────────┐</span>
+<span class="text-slate-500">│</span> <span class="text-cyan-400">Name</span>     <span class="text-slate-500">│</span> <span class="text-cyan-400">Role</span>    <span class="text-slate-500">│</span> <span class="text-cyan-400">Status</span>   <span class="text-slate-500">│</span>
+<span class="text-slate-500">├──────────┼─────────┼──────────┤</span>
+<span class="text-slate-500">│</span> Alice    <span class="text-slate-500">│</span> Admin   <span class="text-slate-500">│</span> <span class="text-emerald-400">Active</span>   <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span> Bob      <span class="text-slate-500">│</span> User    <span class="text-slate-500">│</span> <span class="text-emerald-400">Active</span>   <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span> Charlie  <span class="text-slate-500">│</span> User    <span class="text-slate-500">│</span> <span class="text-amber-400">Pending</span>  <span class="text-slate-500">│</span>
+<span class="text-slate-500">└──────────┴─────────┴──────────┘</span>
+<span class="text-slate-600 text-xs">↑↓ scroll • q quit</span>`,
+
+        json: `<span class="text-slate-500">{</span>
+  <span class="text-cyan-400">"user"</span>: <span class="text-slate-500">{</span>
+    <span class="text-cyan-400">"name"</span>: <span class="text-emerald-400">"Alice"</span>,
+    <span class="text-cyan-400">"email"</span>: <span class="text-emerald-400">"alice@example.com"</span>,
+    <span class="text-cyan-400">"active"</span>: <span class="text-amber-400">true</span>
+  <span class="text-slate-500">}</span>,
+  <span class="text-cyan-400">"settings"</span>: <span class="text-slate-500">{</span>
+    <span class="text-cyan-400">"theme"</span>: <span class="text-emerald-400">"dark"</span>,
+    <span class="text-cyan-400">"notifications"</span>: <span class="text-amber-400">true</span>
+  <span class="text-slate-500">}</span>
+<span class="text-slate-500">}</span>`,
+
+        markdown: `<span class="text-cyan-400 text-lg font-bold"># Welcome</span>
+
+This is <span class="font-bold text-white">bold</span> and <span class="italic text-white">italic</span> text.
+
+<span class="text-slate-400">•</span> First item
+<span class="text-slate-400">•</span> Second item
+<span class="text-slate-400">•</span> Third item
+
+<span class="text-slate-500 bg-slate-800 px-1 rounded">console.log("hello");</span>`,
+
+        progress: `<span class="text-slate-500">┌─ Build Progress ────────────────────┐</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-emerald-400">✓</span> Installing dependencies          <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-emerald-400">✓</span> Compiling TypeScript              <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-cyan-400 animate-pulse">◐</span> Running tests...                  <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-600">○</span> <span class="text-slate-500">Building bundle</span>                  <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>`,
+
+        chart: `<span class="text-slate-500">┌─ Weekly Stats ──────────────────────┐</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  Mon <span class="text-emerald-400">████████</span>          <span class="text-slate-400">42</span>         <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  Tue <span class="text-emerald-400">████████████████</span>  <span class="text-slate-400">78</span>         <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  Wed <span class="text-emerald-400">██████████</span>        <span class="text-slate-400">51</span>         <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  Thu <span class="text-emerald-400">████████████████████</span> <span class="text-slate-400">93</span>        <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  Fri <span class="text-emerald-400">██████████████</span>    <span class="text-slate-400">65</span>         <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>`,
+
+        gauge: `<span class="text-slate-500">┌─ System Resources ──────────────────┐</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-400">CPU</span>   <span class="text-emerald-400">████████████████</span><span class="text-slate-700">████</span>  <span class="text-slate-300">78%</span>  <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-400">MEM</span>   <span class="text-amber-400">██████████████</span><span class="text-slate-700">██████</span>  <span class="text-slate-300">65%</span>  <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-400">DISK</span>  <span class="text-emerald-400">████████</span><span class="text-slate-700">████████████</span>  <span class="text-slate-300">42%</span>  <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>`,
+
+        tree: `<span class="text-slate-500">┌─ Project Structure ─────────────────┐</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-amber-400">📁</span> src/                             <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-600">├──</span> <span class="text-amber-400">📁</span> components/                  <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-600">│   ├──</span> <span class="text-cyan-400">Button.tsx</span>                <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-600">│   └──</span> <span class="text-cyan-400">Modal.tsx</span>                 <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-600">├──</span> <span class="text-cyan-400">index.ts</span>                      <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-600">└──</span> <span class="text-cyan-400">utils.ts</span>                      <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-emerald-400">📄</span> package.json                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>`,
+
+        mermaid: `<span class="text-slate-500">┌─ Workflow Diagram ──────────────────┐</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>   <span class="text-cyan-400">┌───────┐</span>     <span class="text-emerald-400">┌───────┐</span>         <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>   <span class="text-cyan-400">│ Start │</span>────▶<span class="text-emerald-400">│ Build │</span>         <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>   <span class="text-cyan-400">└───────┘</span>     <span class="text-emerald-400">└───┬───┘</span>         <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                     │              <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>               <span class="text-amber-400">┌─────▼─────┐</span>        <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>               <span class="text-amber-400">│   Test    │</span>        <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>               <span class="text-amber-400">└─────┬─────┘</span>        <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                     │              <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>               <span class="text-violet-400">┌─────▼─────┐</span>        <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>               <span class="text-violet-400">│  Deploy   │</span>        <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>               <span class="text-violet-400">└───────────┘</span>        <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>`,
+
+        'plan-viewer': `<span class="text-slate-500">┌─ Implementation Plan ───────────────┐</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-cyan-400 font-bold">## Changes</span>                          <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-400">1.</span> Add authentication middleware   <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-400">2.</span> Create user session handling    <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="text-slate-400">3.</span> Update API routes               <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>  <span class="bg-emerald-600 text-white px-2 rounded">✓ Approve</span>  <span class="bg-red-600 text-white px-2 rounded">✗ Reject</span>             <span class="text-slate-500">│</span>
+<span class="text-slate-500">│</span>                                     <span class="text-slate-500">│</span>
+<span class="text-slate-500">└─────────────────────────────────────┘</span>`
+      };
+
+      // Command examples for each component
+      const commandExamples = {
+        confirm: '--prompt "Deploy to production?"',
+        ask: '--prompt "What is your project name?"',
+        checklist: '--items "Build,Test,Deploy,Notify"',
+        select: '--prompt "Select environment" --options "Dev,Staging,Prod"',
+        diff: '--file "src/config.ts"',
+        code: '--file "utils/format.ts" --lang typescript',
+        table: '--data \'[{"name":"Alice","role":"Admin"}]\'',
+        json: '--data \'{"user":{"name":"Alice"}}\'',
+        markdown: '--file "README.md"',
+        progress: '--steps "Install,Compile,Test,Build"',
+        chart: '--data \'[{"label":"Mon","value":42}]\'',
+        gauge: '--label "CPU" --value 78',
+        tree: '--path "src/"',
+        mermaid: '--diagram "flowchart TD; A-->B"',
+        'plan-viewer': '--file "plan.md"'
+      };
+
+      // Component preview interaction
+      const previewTitle = document.getElementById('preview-title');
+      const previewContent = document.getElementById('preview-content');
+      const commandComponent = document.getElementById('command-component');
+      const commandArgs = document.getElementById('command-args');
+      const componentCards = document.querySelectorAll('[data-component]');
+
+      function selectComponent(card) {
+        const component = card.dataset.component;
+        if (componentPreviews[component]) {
+          previewTitle.textContent = component;
+          previewContent.innerHTML = componentPreviews[component];
+          commandComponent.textContent = component;
+          commandArgs.textContent = commandExamples[component] || '';
+          // Update active state
+          componentCards.forEach(c => {
+            c.classList.remove('border-cyan-500', 'border-amber-500', 'border-emerald-500', 'border-violet-500');
+            c.classList.add('border-white/10');
+          });
+          // Add appropriate border color based on component type
+          card.classList.remove('border-white/10');
+          const text = card.querySelector('span');
+          if (text.classList.contains('text-cyan-400')) card.classList.add('border-cyan-500');
+          else if (text.classList.contains('text-amber-400')) card.classList.add('border-amber-500');
+          else if (text.classList.contains('text-emerald-400')) card.classList.add('border-emerald-500');
+          else if (text.classList.contains('text-violet-400')) card.classList.add('border-violet-500');
+        }
       }
 
-      // Load init wizard demo
-      const initContainer = document.getElementById("asciinema-init");
-      if (window.AsciinemaPlayer && initContainer) {
-        AsciinemaPlayer.create(
-          "recordings/init-demo.cast",
-          initContainer,
-          {
-            fit: "width",
-            autoPlay: true,
-            loop: true,
-            speed: 1.2,
-            theme: "dracula",
-            controls: true
-          }
-        );
+      componentCards.forEach(card => {
+        card.addEventListener('click', () => selectComponent(card));
+      });
+
+      // Select first component by default
+      if (componentCards.length > 0) {
+        selectComponent(componentCards[0]);
       }
+
+      // Video tab switching
+      const videoTabs = document.querySelectorAll('.video-tab');
+      const videoMacos = document.getElementById('video-macos');
+      const videoTerminal = document.getElementById('video-terminal');
+
+      videoTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          const selectedTab = tab.dataset.tab;
+
+          // Update tab styles
+          videoTabs.forEach(t => {
+            if (t.dataset.tab === selectedTab) {
+              t.classList.remove('bg-white/5', 'border-white/10', 'text-slate-400');
+              t.classList.add('bg-white/10', 'border-cyan-400/50', 'text-white');
+            } else {
+              t.classList.remove('bg-white/10', 'border-cyan-400/50', 'text-white');
+              t.classList.add('bg-white/5', 'border-white/10', 'text-slate-400');
+            }
+          });
+
+          // Switch videos
+          if (selectedTab === 'macos') {
+            videoMacos.classList.remove('hidden');
+            videoTerminal.classList.add('hidden');
+            videoTerminal.pause();
+            videoMacos.play();
+          } else {
+            videoTerminal.classList.remove('hidden');
+            videoMacos.classList.add('hidden');
+            videoMacos.pause();
+            videoTerminal.play();
+          }
+        });
+      });
     </script>
   </body>
 </html>
