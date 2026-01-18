@@ -4,8 +4,6 @@ Keep Claude Code interactive while it works.
 
 [![Termos Demo](https://termos-dev.github.io/termos/recordings/poster.jpg)](https://termos-dev.github.io/termos/)
 
-**[termos-dev.github.io/termos](https://termos-dev.github.io/termos/)**
-
 ## The Problem
 
 Claude Code's built-in `AskUserQuestion` tool blocks execution until you respond. One question at a time. If Claude needs approval mid-task, everything stops.
