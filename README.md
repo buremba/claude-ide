@@ -2,7 +2,7 @@
 
 Keep Claude Code interactive while it works.
 
-https://github.com/termos-dev/termos/raw/main/docs/recordings/ghostty.mp4
+[![Termos Demo](https://termos-dev.github.io/termos/recordings/poster.jpg)](https://termos-dev.github.io/termos/)
 
 **[termos-dev.github.io/termos](https://termos-dev.github.io/termos/)**
 
