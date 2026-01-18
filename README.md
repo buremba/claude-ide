@@ -2,7 +2,7 @@
 
 Keep Claude Code interactive while it works.
 
-[![Termos Demo](https://termos-dev.github.io/termos/recordings/poster.jpg)](https://termos-dev.github.io/termos/)
+https://github.com/user-attachments/assets/724385fc-6f1e-4983-b7fc-04801b41a703
 
 ## The Problem
 
